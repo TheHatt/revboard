@@ -1,0 +1,209 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/*** Auth.js Standard-Modelle ***/
+model User {
+  id            String          @id @default(cuid())
+  name          String?
+  email         String?         @unique
+  emailVerified DateTime?
+  image         String?
+
+  // Global: nur du bist SUPERADMIN, alle Kunden-User = USER
+  globalRole    UserGlobalRole  @default(USER)
+
+  accounts      Account[]
+  sessions      Session[]
+  memberships   Membership[]
+  locationAccess LocationAccess[]
+
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+enum UserGlobalRole {
+  SUPERADMIN
+  USER
+}
+model Account {
+  id                String @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?  @db.Text
+  access_token      String?  @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?  @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+/*** Multi-Tenancy & Standorte ***/
+model Tenant {
+  id                     String      @id @default(cuid())
+  name                   String
+
+  // Billing & Pläne
+  plan                   PlanType    @default(BASIC)   // BASIC (ohne KI), PRO (mit KI)
+  aiMonthlyLimit         Int?                        // z.B. 200 bei PRO; null bei BASIC
+  stripeCustomerId       String?                    // optional für später
+
+  // Auto-Reply Settings (global pro Tenant)
+  autoReplyEnabled       Boolean     @default(false)
+  autoReplyDelayHours    Int         @default(24)     // nach X Stunden
+  autoReplyMinStars      Int         @default(3)      // nur ab dieser Bewertung automatisch antworten
+
+  // Datenaufbewahrung
+  reviewRetentionDays    Int         @default(365)
+
+  members                Membership[]
+  locations              Location[]
+  aiUsages               AiUsage[]
+
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+}
+enum PlanType {
+  BASIC
+  PRO
+}
+model Membership {
+  id        String      @id @default(cuid())
+  userId    String
+  tenantId  String
+  role      TenantRole  @default(EDITOR)
+
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId, role])
+}
+enum TenantRole {
+  ADMIN
+  EDITOR
+}
+model Location {
+  id            String   @id @default(cuid())
+  tenantId      String
+  name          String
+  address       String?
+  // IDs für Google (optional bis zur Integration)
+  googlePlaceId String?
+  googleLbcId   String?
+  status        String?  // "active" | "inactive"
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reviews       Review[]
+  access        LocationAccess[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId])
+}
+/** Zuteilung: welcher Redakteur sieht/bearbeitet welche Standorte */
+model LocationAccess {
+  id         String   @id @default(cuid())
+  userId     String
+  locationId String
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, locationId])
+  @@index([locationId])
+}
+
+/*** Reviews & Replies ***/
+model Review {
+  id             String     @id @default(cuid())
+  tenantId       String
+  locationId     String
+  source         ReviewSource @default(GOOGLE)
+  externalId     String?     // z.B. googleReviewId
+  authorName     String?
+  rating         Int         // 1..5
+  language       String?     // "de", "en"
+  text           String?
+  publishedAt    DateTime    // Erstelldatum bei Google
+  updatedAt      DateTime?   // Update bei Google (falls Edit)
+  // Antwortstatus lässt sich aus Reply ableiten; optionaler Cache:
+  answeredAt     DateTime?
+
+  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  location       Location    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  reply          Reply?
+
+  // Auto-Reply-Koordinierung (für Worker/Idempotenz)
+  autoReplyLockedAt  DateTime?
+  autoReplyLastTried DateTime?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([source, externalId], map: "review_source_extId_unique")
+  @@index([tenantId, publishedAt])
+  @@index([locationId, publishedAt])
+  @@index([rating])
+}
+enum ReviewSource {
+  GOOGLE
+}
+
+model Reply {
+  id            String     @id @default(cuid())
+  reviewId      String     @unique
+  postedByUserId String?   // wer hat gepostet (kann null sein, falls Auto)
+  type          ReplyType  @default(MANUAL) // MANUAL oder AUTO_AI
+  text          String
+  postedAt      DateTime
+
+  review        Review     @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  postedByUser  User?      @relation(fields: [postedByUserId], references: [id])
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+}
+enum ReplyType {
+  MANUAL
+  AUTO_AI
+}
+
+/*** AI-Nutzung pro Monat (Limit durch Plan) ***/
+model AiUsage {
+  id        String  @id @default(cuid())
+  tenantId  String
+  yearMonth String  // "2025-08"
+  replies   Int     @default(0)
+
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, yearMonth])
+}
