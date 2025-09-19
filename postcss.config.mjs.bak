@@ -1,0 +1,6 @@
+export default {
+  plugins: {
+    "tailwindcss": {},
+    "tailwindcss-animate": {},  // 👈 hier einfügen
+  },
+};
