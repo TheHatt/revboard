@@ -1,10 +1,15 @@
 "use client";
-export default function Error({ reset }: { reset: () => void }) {
+
+export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
-    <div className="rounded-2xl border p-6 text-sm">
-      <div className="mb-2 font-medium">Upps, etwas ist schiefgelaufen.</div>
-      <button onClick={reset} className="rounded-xl border px-3 py-2 text-xs hover:bg-neutral-50">
-        Neu laden
+    <div className="rounded-2xl border bg-card p-6">
+      <h2 className="text-base font-semibold">Uups – Reviews konnten nicht geladen werden.</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{error.message}</p>
+      <button
+        onClick={() => reset()}
+        className="mt-4 rounded-md border bg-accent px-3 py-2 text-sm"
+      >
+        Noch einmal versuchen
       </button>
     </div>
   );
