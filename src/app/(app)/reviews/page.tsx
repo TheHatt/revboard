@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { getTenantAndLocationsForUser } from "@/lib/tenancy";
 import ReviewsSkeleton from "./ReviewsSkeleton";
 import ReviewsServer from "./ReviewsServer";
+import { prisma } from "@/lib/prisma";
 
 type SearchParams = {
   cursor?: string;
@@ -31,16 +32,21 @@ function normalizeFilters(sp: Record<string, string | string[] | undefined>) {
 export default async function Page({ searchParams }: { searchParams: SearchParams }) {
   // ---- Tenancy aus Session ableiten ----
   const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
-  if (!userId) {
-    throw new Error("Keine Session oder user.id – bitte einloggen.");
-  }
 
-  const { tenantId, allowedLocationIds, locationOptions } =
-    await getTenantAndLocationsForUser(userId);
+  const user = session?.user as any;
+  if (!user?.id) throw new Error("Keine Session oder user.id – bitte einloggen.");
 
-  // UI-Optionen als Namen (bestehendes Verhalten): ["alle", ...]
-  const uiLocationOptions = ["alle", ...locationOptions.map((l) => l.label)];
+  const tenantId = user.tenantId as string;
+  const allowedLocationIds = (user.locationIds ?? []) as string[];
+
+// Namen frisch aus DB (immer aktuell)
+
+  const locations = await prisma.location.findMany({
+    where: { tenantId, ...(allowedLocationIds.length ? { id: { in: allowedLocationIds } } : {}) },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  const uiLocationOptions = ["alle", ...locations.map(l => l.name)];
 
   // ---- URL-Filter lesen & normalisieren ----
   const filters = normalizeFilters(searchParams as any);

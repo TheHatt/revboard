@@ -7,6 +7,7 @@ import FilterBarStats from "./FilterBarStats";
 import StatsSkeleton from "./StatsSkeleton";
 import StatsServer from "./StatsServer";
 import type { StatsQuery } from "@/lib/stats";
+import { prisma } from "@/lib/prisma";
 
 export type StatsFilters = {
   range?: StatsQuery["range"] | null;
@@ -26,11 +27,22 @@ export default async function StatsPage({ searchParams }: { searchParams: Record
   const filters = parseFilters(searchParams);
 
   const session = await getServerSession(authOptions);
-  const userId = (session?.user as any)?.id as string | undefined;
-  if (!userId) throw new Error("Keine Session oder user.id – bitte einloggen.");
+  
+  const user = session?.user as any;
+  if (!user?.id) throw new Error("Keine Session oder user.id – bitte einloggen.");
 
-  const { tenantId, allowedLocationIds, locationOptions } = await getTenantAndLocationsForUser(userId);
-  const uiLocationOptions = [{ id: "all", label: "Alle Standorte" }, ...locationOptions];
+  const tenantId = user.tenantId as string;
+  const allowedLocationIds = (user.locationIds ?? []) as string[];
+
+// Namen frisch aus DB (immer aktuell)
+
+  const locations = await prisma.location.findMany({
+    where: { tenantId, ...(allowedLocationIds.length ? { id: { in: allowedLocationIds } } : {}) },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  const uiLocationOptions = [{ id: "all", label: "Alle Standorte" }, ...locations.map(l => ({ id: l.id, label: l.name }))];
+
 
   return (
     <main className="flex flex-col gap-6 p-6">
