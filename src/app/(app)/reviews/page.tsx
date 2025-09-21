@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import ReviewsClient from "./ReviewsClient";
 import { listTenantLocations } from "@/lib/locations";
-// import { getSession } from "@/lib/auth"; // wenn deine echte Session bereits da ist
+import { getSession } from "@/lib/auth";
 
 type SearchParams = {
   cursor?: string;
@@ -31,10 +31,17 @@ function decodeCursor(cursor?: string) {
 
 export default async function Page({ searchParams }: { searchParams: SearchParams }) {
   const tenantId = await getTenantId();
-  // echte Session (falls schon Stub): const session = await getSession();
-  const allowedLocationIds: string[] = []; // z. B. session.allowedLocationIds
+  const session = await getSession();
+  const role: "viewer" | "editor" | "admin" = (session?.role ?? "viewer");
+  const allowedLocationIds: string[] = session?.allowedLocationIds ?? [];
   const locRows = await listTenantLocations(tenantId, allowedLocationIds);
   const locationOptions = ["alle", ...locRows.map((l) => l.name)];
+
+  // URL-Parameter bereinigen: falls ungültig, auf "alle" zurücksetzen
+  const selectedLocation =
+    searchParams.location && locationOptions.includes(searchParams.location)
+      ? searchParams.location
+      : "alle";
 
   const take = Math.min(Math.max(Number(searchParams.take ?? 12), 1), 50);
 
@@ -60,6 +67,12 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
   if (searchParams.location && searchParams.location !== "alle") {
     // nach Standort-Name filtern (Relation)
     where.location = { name: searchParams.location };
+  }
+
+  if (allowedLocationIds.length > 0) {
+    where.locationId = where.locationId
+      ? (allowedLocationIds.includes(where.locationId) ? where.locationId : "__NONE__")
+      : { in: allowedLocationIds };
   }
 
   const cursorObj = decodeCursor(searchParams.cursor);
@@ -102,6 +115,7 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
 
   return (
     <ReviewsClient
+      role={role}
       reviews={reviews}
       nextCursor={nextCursor}
       locationOptions={locationOptions}
@@ -109,7 +123,7 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
         rating: searchParams.rating ?? "alle",
         status: searchParams.status ?? "alle",
         range: searchParams.range ?? "vollständig",
-        location: searchParams.location ?? "alle",
+        location: selectedLocation,
         take,
       }}
     />

@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect } from "react";
 import { Star, Send, X, MessageSquare, Filter } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/components/ui/toast"; // ← Toast-Hook
+import TimeAgo from "@/components/TimeAgo";
 
 // --- Types (DTO vom Server) ---
 export type ReviewDTO = {
@@ -20,6 +21,7 @@ export type ReviewDTO = {
 };
 
 type Props = {
+  role: "viewer" | "editor" | "admin";
   reviews: ReviewDTO[];
   nextCursor?: string;
   serverFilters: {
@@ -47,7 +49,7 @@ function timeAgo(iso: string) {
   return d === 1 ? "vor 1 Tag" : `vor ${d} Tagen`;
 }
 
-export default function ReviewsClient({ reviews, nextCursor, serverFilters, locationOptions }: Props) {
+export default function ReviewsClient({ reviews, nextCursor, serverFilters, locationOptions, role }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { push } = useToast(); // ← Toast
@@ -139,6 +141,7 @@ export default function ReviewsClient({ reviews, nextCursor, serverFilters, loca
               onClose={() => setExpanded(null)}
               onPublish={async (text, tone) => {
                 // Optimistic Update
+                if (role === "viewer") return;
                 const prev = { answered: r.answered, replyText: r.replyText };
                 r.answered = true;
                 r.replyText = text;
@@ -188,6 +191,25 @@ export default function ReviewsClient({ reviews, nextCursor, serverFilters, loca
           )
         )}
       </div>
+
+      {filtered.length === 0 && (
+        <div className="rounded-2xl border p-6 text-sm text-neutral-600">
+          Keine Ergebnisse.
+          <button
+            onClick={() => {
+              const params = new URLSearchParams();
+              params.set("rating", "alle");
+              params.set("status", "alle");
+              params.set("range", "vollständig");
+              params.set("location", "alle");
+              window.location.href = `/reviews?${params.toString()}`;
+            }}
+            className="ml-2 underline"
+          >
+            Filter zurücksetzen
+          </button>
+        </div>
+      )}
 
       {/* Pagination */}
       <div className="flex items-center justify-center pb-4">
@@ -246,7 +268,9 @@ export default function ReviewsClient({ reviews, nextCursor, serverFilters, loca
             <div>
               <div className="text-sm font-medium">{review.author}</div>
               <div className="text-[11px] text-neutral-500">
-                {timeAgo(review.publishedAt)} · {review.location}
+                <div className="text-[11px] text-neutral-500">
+                    <TimeAgo iso={review.publishedAt} /> · {review.location}
+                </div>
               </div>
             </div>
           </div>
@@ -266,7 +290,8 @@ export default function ReviewsClient({ reviews, nextCursor, serverFilters, loca
         <div className="mt-4 flex items-center justify-between">
           <div className="text-[11px] text-neutral-500">{review.answered ? "beantwortet" : "offen"}</div>
           <div className="flex gap-2">
-            {!review.answered ? (
+          {role !== "viewer" ? (
+            !review.answered ? (
               <button
                 onClick={onReply}
                 className="rounded-xl bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 dark:bg-white dark:text-black"
@@ -280,6 +305,17 @@ export default function ReviewsClient({ reviews, nextCursor, serverFilters, loca
               >
                 ansehen
               </button>
+               )
+              ) : (
+                // viewer: nur ansehen
+                <button
+                  onClick={onView}
+                  className="rounded-xl border px-3 py-1.5 text-xs hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
+                  aria-disabled
+                  title="Nur Ansicht (keine Schreibrechte)"
+                >
+                  ansehen
+                </button>
             )}
           </div>
         </div>

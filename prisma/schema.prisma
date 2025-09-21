@@ -206,8 +206,9 @@ model Review {
   // ✅ neu: stabiler Cursor (publishedAt + id)
   @@unique([publishedAt, id], name: "publishedAt_id")
   // vorhanden:
-  @@index([tenantId, publishedAt])
-  @@index([locationId, publishedAt])
+  @@index([locationId, publishedAt])                  // für reine Location-Zeitraum-Queries
+  @@index([tenantId, publishedAt])                    // hast du schon – für Tenant-Zeitraum
+  @@index([tenantId, locationId, publishedAt])        // neu – für Tenant+Location im Zeitraum
   @@index([rating])
 }
 
