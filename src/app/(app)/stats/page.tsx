@@ -1,14 +1,15 @@
 // src/app/(app)/stats/page.tsx
 import { Suspense } from "react";
-import StatsClient from "./StatsClient";
-import FilterBarStats from "./FilterBarStats";
-import { getStats, type StatsQuery } from "@/lib/stats";
 import { getServerSession } from "next-auth";
-import { auth, authOptions } from "@/lib/auth";                 // <- an dein Projekt anpassen
+import { authOptions } from "@/lib/auth";
 import { getTenantAndLocationsForUser } from "@/lib/tenancy";
+import FilterBarStats from "./FilterBarStats";
+import StatsSkeleton from "./StatsSkeleton";
+import StatsServer from "./StatsServer";
+import type { StatsQuery } from "@/lib/stats";
 
 export type StatsFilters = {
-  range?: StatsQuery["range"] | null;                     // "heute" | "7 Tage" | "30 Tage" | "vollständig"
+  range?: StatsQuery["range"] | null;
   locationId?: string | null;
 };
 
@@ -17,26 +18,18 @@ function parseFilters(sp: Record<string, string | string[] | undefined>): StatsF
   const loc = raw("location");
   return {
     range: (raw("range") as StatsFilters["range"]) ?? "30 Tage",
-    locationId: loc === "all" ? null : loc,               // 👈 "all" neutralisieren
+    locationId: loc === "all" ? null : loc, // "all" neutralisieren
   };
 }
 
 export default async function StatsPage({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
   const filters = parseFilters(searchParams);
 
-  // Session → Tenancy
-  const session = await auth();
-  const userId = session!.user.id;
-  const { tenantId, allowedLocationIds, locationOptions } =
-    await getTenantAndLocationsForUser(userId);
+  const session = await getServerSession(authOptions);
+  const userId = (session?.user as any)?.id as string | undefined;
+  if (!userId) throw new Error("Keine Session oder user.id – bitte einloggen.");
 
-  // Stats abrufen (range + optional locationId)
-  const q: StatsQuery = {
-    range: filters.range ?? "30 Tage",
-    locationId: filters.locationId ?? undefined,           // "all" ist bereits neutralisiert
-  };
-  const stats = await getStats(tenantId, allowedLocationIds, q);
-
+  const { tenantId, allowedLocationIds, locationOptions } = await getTenantAndLocationsForUser(userId);
   const uiLocationOptions = [{ id: "all", label: "Alle Standorte" }, ...locationOptions];
 
   return (
@@ -51,8 +44,8 @@ export default async function StatsPage({ searchParams }: { searchParams: Record
         locationOptions={uiLocationOptions}
       />
 
-      <Suspense>
-        <StatsClient stats={stats} filters={filters} />
+      <Suspense fallback={<StatsSkeleton />}>
+        <StatsServer tenantId={tenantId} allowedLocationIds={allowedLocationIds} filters={filters} />
       </Suspense>
     </main>
   );

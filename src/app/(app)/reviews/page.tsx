@@ -1,7 +1,9 @@
+// src/app/(app)/reviews/page.tsx
 import { prisma } from "@/lib/prisma";
 import ReviewsClient from "./ReviewsClient";
-import { listTenantLocations } from "@/lib/locations";
-import { getSession } from "@/lib/auth";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { getTenantAndLocationsForUser } from "@/lib/tenancy";
 
 type SearchParams = {
   cursor?: string;
@@ -11,11 +13,6 @@ type SearchParams = {
   location?: string;   // "alle" | Standort-Name
   range?: string;      // "vollständig" | "heute" | "7 Tage" | "30 Tage"
 };
-
-// TODO: später echte Auth (Session → tenantId)
-async function getTenantId() {
-  return "demo-tenant-id";
-}
 
 // Cursor enc/dec
 function encodeCursor(publishedAt: Date, id: string) {
@@ -29,53 +26,88 @@ function decodeCursor(cursor?: string) {
   return isNaN(d.getTime()) ? null : { publishedAt: d, id };
 }
 
-export default async function Page({ searchParams }: { searchParams: SearchParams }) {
-  const tenantId = await getTenantId();
-  const session = await getSession();
-  const role: "viewer" | "editor" | "admin" = (session?.role ?? "viewer");
-  const allowedLocationIds: string[] = session?.allowedLocationIds ?? [];
-  const locRows = await listTenantLocations(tenantId, allowedLocationIds);
-  const locationOptions = ["alle", ...locRows.map((l) => l.name)];
+// Optionale Normalisierung der URL-Filter (hier nur "location")
+function normalizeFilters(sp: Record<string, string | string[] | undefined>) {
+  const raw = (k: string) => (Array.isArray(sp[k]) ? (sp[k] as string[])[0] : sp[k]) ?? null;
+  return {
+    rating: raw("rating") ?? "alle",
+    status: raw("status") ?? "alle",
+    range: raw("range") ?? "vollständig",
+    location: raw("location") ?? "alle", // Standort-Name oder "alle"
+    take: raw("take"),
+    cursor: raw("cursor"),
+  };
+}
 
-  // URL-Parameter bereinigen: falls ungültig, auf "alle" zurücksetzen
+export default async function Page({ searchParams }: { searchParams: SearchParams }) {
+  // ---- Tenancy aus Session ableiten ----
+  const session = await getServerSession(authOptions);
+  const userId = (session?.user as any)?.id as string | undefined;
+  if (!userId) {
+    throw new Error("Keine Session oder user.id – bitte einloggen.");
+  }
+
+  const { tenantId, allowedLocationIds, locationOptions } =
+    await getTenantAndLocationsForUser(userId);
+
+  // UI-Optionen als Namen (bestehendes Verhalten): ["alle", ...]
+  const uiLocationOptions = ["alle", ...locationOptions.map((l) => l.label)];
+
+  // ---- URL-Filter lesen & validieren ----
+  const f = normalizeFilters(searchParams as any);
+
   const selectedLocation =
-    searchParams.location && locationOptions.includes(searchParams.location)
-      ? searchParams.location
+    f.location && uiLocationOptions.includes(f.location)
+      ? f.location
       : "alle";
 
-  const take = Math.min(Math.max(Number(searchParams.take ?? 12), 1), 50);
+  const take = Math.min(Math.max(Number(f.take ?? 12), 1), 50);
 
-  // --- Filter bauen ---
+  // ---- WHERE-Bedingungen bauen ----
   const where: any = { tenantId };
 
-  if (searchParams.rating && searchParams.rating !== "alle") {
-    where.rating = Number(searchParams.rating);
+  // Bewertung
+  if (f.rating && f.rating !== "alle") {
+    where.rating = Number(f.rating);
   }
 
-  if (searchParams.status === "offen") where.answeredAt = null;
-  if (searchParams.status === "beantwortet") where.answeredAt = { not: null };
+  // Status
+  if (f.status === "offen") where.answeredAt = null;
+  if (f.status === "beantwortet") where.answeredAt = { not: null };
 
-  if (searchParams.range && searchParams.range !== "vollständig") {
+  // Zeitraum
+  if (f.range && f.range !== "vollständig") {
     const now = new Date();
     const from = new Date(now);
-    if (searchParams.range === "heute") from.setHours(0, 0, 0, 0);
-    else if (searchParams.range === "7 Tage") from.setDate(now.getDate() - 7);
-    else if (searchParams.range === "30 Tage") from.setDate(now.getDate() - 30);
-    where.publishedAt = { gte: from };
+    if (f.range === "heute") {
+      from.setHours(0, 0, 0, 0);
+    } else if (f.range === "7 Tage") {
+      from.setDate(now.getDate() - 7);
+      from.setHours(0, 0, 0, 0);
+    } else if (f.range === "30 Tage") {
+      from.setDate(now.getDate() - 30);
+      from.setHours(0, 0, 0, 0);
+    }
+    where.publishedAt = { gte: from, lte: now };
   }
 
-  if (searchParams.location && searchParams.location !== "alle") {
-    // nach Standort-Name filtern (Relation)
-    where.location = { name: searchParams.location };
+  // Standort per NAME (bestehende UI) ODER "alle"
+  if (selectedLocation && selectedLocation !== "alle") {
+    // Relation nach Name
+    where.location = { name: selectedLocation };
   }
 
+  // **Scope-Guard**: nur erlaubte Locations
   if (allowedLocationIds.length > 0) {
+    // Falls bereits ein harter Filter via where.locationId gesetzt wäre, prüfen;
+    // da wir oben nach Name filtern, ergänzen wir hier den Scope anhand locationId.
     where.locationId = where.locationId
       ? (allowedLocationIds.includes(where.locationId) ? where.locationId : "__NONE__")
       : { in: allowedLocationIds };
   }
 
-  const cursorObj = decodeCursor(searchParams.cursor);
+  // ---- Cursor / Pagination ----
+  const cursorObj = decodeCursor(f.cursor ?? undefined);
 
   const results = await prisma.review.findMany({
     where,
@@ -115,14 +147,15 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
 
   return (
     <ReviewsClient
-      role={role}
+      // Rolle ggf. aus Session ableiten; hier simple Default:
+      role={"viewer"}
       reviews={reviews}
       nextCursor={nextCursor}
-      locationOptions={locationOptions}
+      locationOptions={uiLocationOptions}
       serverFilters={{
-        rating: searchParams.rating ?? "alle",
-        status: searchParams.status ?? "alle",
-        range: searchParams.range ?? "vollständig",
+        rating: f.rating,
+        status: f.status,
+        range: f.range,
         location: selectedLocation,
         take,
       }}

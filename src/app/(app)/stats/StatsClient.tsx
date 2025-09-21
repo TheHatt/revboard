@@ -1,19 +1,25 @@
-// src/app/(app)/stats/StatsClient.tsx
 "use client";
 
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Star, MessageSquare, CheckCircle2 } from "lucide-react";
-import type { StatsFilters } from "./page";
-import type { StatsDTO } from "@/lib/stats";
+import type { StatsQuery, StatsDTO } from "@/lib/stats";
 
-export default function StatsClient({
-  stats,
-  filters,
-}: {
-  stats: StatsDTO;     // <- direkt dein DTO
-  filters: StatsFilters;
-}) {
+export type StatsFilters = {
+  range?: StatsQuery["range"] | null;
+  locationId?: string | null;
+};
+
+export default function StatsClient({ stats, filters }: { stats: StatsDTO; filters: StatsFilters }) {
+  // Empty-State, wenn keine Daten im Zeitraum
+  if (stats.totalReviews === 0) {
+    return (
+      <div className="rounded-2xl border bg-card p-6 text-sm text-muted-foreground">
+        Keine Daten für den ausgewählten Zeitraum/Standort.
+      </div>
+    );
+  }
+
   const items = useMemo(
     () => [
       {
@@ -33,7 +39,7 @@ export default function StatsClient({
       {
         key: "replyRate",
         label: "Antwortquote",
-        value: formatPercent(stats.replyRate), // <- hier!
+        value: formatPercent(stats.replyRate), // stabil (kein Intl-Drift)
         sub: labelForRange(filters.range ?? undefined),
         icon: CheckCircle2,
       },
@@ -63,9 +69,8 @@ function intlNumber(n: number, opts: Intl.NumberFormatOptions = {}) {
   return new Intl.NumberFormat(undefined, opts).format(n);
 }
 function formatPercent(n: number) {
-    const p = Math.round(n * 100);
-    return `${p}%`;
-  }
+  return `${Math.round(n * 100)}%`; // deterministisch, vermeidet Hydration-Mismatch
+}
 function labelForRange(range?: StatsFilters["range"] | null) {
   if (!range) return undefined;
   const map: Record<string, string> = {

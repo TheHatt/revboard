@@ -76,9 +76,9 @@ export default function FilterBarStats({
         </Select>
       </div>
 
-      
+      <div className="sm:justify-self-start">
         <Button onClick={apply} variant="secondary" className="w-full sm:w-auto">Anwenden</Button>
-      
+      </div>
     </div>
   );
 }
