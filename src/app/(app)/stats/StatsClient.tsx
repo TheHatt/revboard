@@ -1,3 +1,4 @@
+// src/app/(app)/stats/StatsClient.tsx
 "use client";
 
 import { useMemo } from "react";
@@ -10,16 +11,14 @@ export type StatsFilters = {
   locationId?: string | null;
 };
 
-export default function StatsClient({ stats, filters }: { stats: StatsDTO; filters: StatsFilters }) {
-  // Empty-State, wenn keine Daten im Zeitraum
-  if (stats.totalReviews === 0) {
-    return (
-      <div className="rounded-2xl border bg-card p-6 text-sm text-muted-foreground">
-        Keine Daten für den ausgewählten Zeitraum/Standort.
-      </div>
-    );
-  }
-
+export default function StatsClient({
+  stats,
+  filters,
+}: {
+  stats: StatsDTO;
+  filters: StatsFilters;
+}) {
+  // Hook immer zuerst aufrufen (keine Bedingung davor)
   const items = useMemo(
     () => [
       {
@@ -39,25 +38,45 @@ export default function StatsClient({ stats, filters }: { stats: StatsDTO; filte
       {
         key: "replyRate",
         label: "Antwortquote",
-        value: formatPercent(stats.replyRate), // stabil (kein Intl-Drift)
+        value: formatPercent(stats.replyRate), // deterministisch, Hydration-safe
         sub: labelForRange(filters.range ?? undefined),
         icon: CheckCircle2,
       },
     ],
-    [stats, filters]
+    // feingranulare Deps, damit nicht unnötig neu berechnet wird
+    [stats.totalReviews, stats.avgRating, stats.replyRate, filters.range]
   );
 
+  const isEmpty = stats.totalReviews === 0;
+
+  if (isEmpty) {
+    return (
+      <div className="rounded-2xl border bg-card p-6 text-sm text-muted-foreground">
+        Keine Daten für den ausgewählten Zeitraum/Standort.
+      </div>
+    );
+  }
+
   return (
-    <section aria-label="Kernkennzahlen" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <section
+      aria-label="Kernkennzahlen"
+      className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+    >
       {items.map((it) => (
         <Card key={it.key} className="rounded-2xl">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{it.label}</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              {it.label}
+            </CardTitle>
             <it.icon className="size-5" aria-hidden />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold leading-tight">{it.value}</div>
-            {it.sub ? <p className="mt-1 text-xs text-muted-foreground">{it.sub}</p> : null}
+            <div className="text-3xl font-semibold leading-tight">
+              {it.value}
+            </div>
+            {it.sub ? (
+              <p className="mt-1 text-xs text-muted-foreground">{it.sub}</p>
+            ) : null}
           </CardContent>
         </Card>
       ))}
@@ -68,16 +87,18 @@ export default function StatsClient({ stats, filters }: { stats: StatsDTO; filte
 function intlNumber(n: number, opts: Intl.NumberFormatOptions = {}) {
   return new Intl.NumberFormat(undefined, opts).format(n);
 }
+
 function formatPercent(n: number) {
-  return `${Math.round(n * 100)}%`; // deterministisch, vermeidet Hydration-Mismatch
+  return `${Math.round(n * 100)}%`;
 }
+
 function labelForRange(range?: StatsFilters["range"] | null) {
   if (!range) return undefined;
   const map: Record<string, string> = {
-    "heute": "heute",
+    heute: "heute",
     "7 Tage": "letzte 7 Tage",
     "30 Tage": "letzte 30 Tage",
-    "vollständig": "gesamter Zeitraum",
+    vollständig: "gesamter Zeitraum",
   };
   return map[range] ?? undefined;
 }
