@@ -1,73 +1,58 @@
-// src/app/(app)/reviews/[id]/reply/route.ts
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+// src/app/api/reviews/[id]/reply/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { saveReply } from "@/lib/reviews";
+import { requireSessionOr403, requireEditorOrAdminOr403, checkLocationScopeOr403 } from "@/lib/guards";
 import { prisma } from "@/lib/prisma";
 
-type AiTone = "neutral" | "freundlich" | "formell" | "ausführlich" | "knapp";
-
-// export const dynamic = "force-dynamic"; // optional
-
-export async function POST(req: Request, context: unknown) {
-  const reviewId = (context as any)?.params?.id as string | undefined;
-  if (!reviewId) {
-    return NextResponse.json({ error: "Ungültige URL: id fehlt" }, { status: 400 });
-  }
-
+export const POST = async (req: NextRequest, { params }: { params: { id: string } }) => {
   try {
-    // 1) Auth
-    const session = await getServerSession(authOptions);
-    const user = session?.user as
-      | { id: string; tenantId: string; locationIds: string[] }
-      | undefined;
-
-    if (!user?.id || !user.tenantId) {
-      return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
+    // Session & Rolle
+    const s = await requireSessionOr403();
+    if ("error" in s) {
+      return NextResponse.json({ error: s.error.message }, { status: s.error.status });
+    }
+    const session = s.session;
+    const roleGuard = requireEditorOrAdminOr403(session);
+    if (roleGuard) {
+      return NextResponse.json({ error: roleGuard.error.message }, { status: roleGuard.error.status });
     }
 
-    // 2) Body
-    const body = (await req.json().catch(() => ({}))) as { text?: unknown; tone?: unknown };
-    const text = typeof body?.text === "string" ? body.text.trim() : "";
-    const tone: AiTone | undefined = typeof body?.tone === "string" ? (body.tone as AiTone) : undefined;
-    if (!text) return NextResponse.json({ error: "Text fehlt" }, { status: 400 });
+    // Body
+    const { text } = await req.json().catch(() => ({} as any));
+    if (!text || typeof text !== "string" || text.trim().length === 0) {
+      return NextResponse.json({ error: "Text is required" }, { status: 400 });
+    }
 
-    // 3) Review + Tenancy
+    // Preflight: Tenant- & Location-Scope prüfen
     const review = await prisma.review.findUnique({
-      where: { id: reviewId },
-      select: { id: true, tenantId: true, locationId: true, reply: { select: { text: true } } },
+      where: { id: params.id },
+      select: { tenantId: true, locationId: true },
     });
-    if (!review) return NextResponse.json({ error: "Review nicht gefunden" }, { status: 404 });
-    if (review.tenantId !== user.tenantId) {
-      return NextResponse.json({ error: "Kein Zugriff (Tenant-Mismatch)" }, { status: 403 });
+    if (!review) return NextResponse.json({ error: "Review not found" }, { status: 404 });
+    if (review.tenantId !== session.tenantId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    if (user.locationIds?.length && !user.locationIds.includes(review.locationId)) {
-      return NextResponse.json({ error: "Kein Zugriff auf diesen Standort" }, { status: 403 });
-    }
-    if (review.reply) {
-      return NextResponse.json({ error: "Bereits beantwortet", replyText: review.reply.text }, { status: 409 });
+    const locGuard = checkLocationScopeOr403(session, review.locationId);
+    if (locGuard) {
+      return NextResponse.json({ error: locGuard.error.message }, { status: locGuard.error.status });
     }
 
-    // 4) Persist
-    const postedAt = new Date();
-    const reply = await prisma.reply.create({
-      data: {
-        reviewId: review.id,
-        postedByUserId: user.id,
-        type: tone ? "AUTO_AI" : "MANUAL",
-        text,
-        postedAt,
-      },
+    // Speichern
+    const res = await saveReply({
+      reviewId: params.id,
+      tenantId: session.tenantId,
+      text: text.trim(),
+      authorUserId: session.userId,
+      allowEdit: false,
     });
-    await prisma.review.update({ where: { id: review.id }, data: { answeredAt: postedAt } });
 
-    return NextResponse.json({
-      ok: true,
-      reviewId: review.id,
-      replyText: reply.text,
-      answeredAt: postedAt.toISOString(),
-    });
-  } catch (e) {
-    console.error("[reply.POST]", e);
-    return NextResponse.json({ error: "Unerwarteter Fehler" }, { status: 500 });
+    if ("error" in res && res.error) {
+      return NextResponse.json({ error: res.error.message }, { status: res.error.status });
+    }
+
+    return NextResponse.json({ reply: res.reply }, { status: 200 });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
-}
+};
