@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { buildDateRange } from "@/lib/dateRange";
+
 
 /** Eingabe wie in der Liste, aber Location per ID (robuster als Name) */
 export type StatsQuery = {
@@ -6,23 +8,8 @@ export type StatsQuery = {
   locationId?: string;                 // optional; wenn gesetzt, überschreibt allowedLocationIds-Einschränkung
 };
 
-type DateRange = { gte?: Date; lte?: Date };
 
-function buildDateRange(range?: StatsQuery["range"]): DateRange {
-  if (!range || range === "vollständig") return {};
-  const now = new Date();
-  const from = new Date(now);
-  if (range === "heute") {
-    from.setHours(0, 0, 0, 0);
-  } else if (range === "7 Tage") {
-    from.setDate(now.getDate() - 7);
-    from.setHours(0, 0, 0, 0);
-  } else if (range === "30 Tage") {
-    from.setDate(now.getDate() - 30);
-    from.setHours(0, 0, 0, 0);
-  }
-  return { gte: from, lte: now };
-}
+
 
 export type StatsDTO = {
   totalReviews: number;
