@@ -1,11 +1,24 @@
 // src/app/api/reviews/[id]/reply/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { saveReply } from "@/lib/reviews";
-import { requireSessionOr403, requireEditorOrAdminOr403, checkLocationScopeOr403 } from "@/lib/guards";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { saveReply } from "@/lib/reviews";
+import {
+  requireSessionOr403,
+  requireEditorOrAdminOr403,
+  checkLocationScopeOr403,
+} from "@/lib/guards";
 
-export const POST = async (req: NextRequest, { params }: { params: { id: string } }) => {
+// WICHTIG: nur ein Argument (req: Request) – kein zweiter Parameter!
+export const POST = async (req: Request) => {
   try {
+    // ID aus URL parsen: /api/reviews/:id/reply
+    const url = new URL(req.url);
+    const match = url.pathname.match(/\/api\/reviews\/([^/]+)\/reply\/?$/);
+    const reviewId = match?.[1];
+    if (!reviewId) {
+      return NextResponse.json({ error: "Invalid URL: review id missing" }, { status: 400 });
+    }
+
     // Session & Rolle
     const s = await requireSessionOr403();
     if ("error" in s) {
@@ -18,28 +31,31 @@ export const POST = async (req: NextRequest, { params }: { params: { id: string 
     }
 
     // Body
-    const { text } = await req.json().catch(() => ({} as any));
-    if (!text || typeof text !== "string" || text.trim().length === 0) {
+    const { text } = (await req.json().catch(() => ({}))) as { text?: unknown };
+    if (typeof text !== "string" || text.trim().length === 0) {
       return NextResponse.json({ error: "Text is required" }, { status: 400 });
     }
 
     // Preflight: Tenant- & Location-Scope prüfen
     const review = await prisma.review.findUnique({
-      where: { id: params.id },
-      select: { tenantId: true, locationId: true },
+      where: { id: reviewId },
+      select: { tenantId: true, locationId: true, reply: { select: { id: true } } },
     });
     if (!review) return NextResponse.json({ error: "Review not found" }, { status: 404 });
     if (review.tenantId !== session.tenantId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ error: "Forbidden (tenant mismatch)" }, { status: 403 });
     }
     const locGuard = checkLocationScopeOr403(session, review.locationId);
     if (locGuard) {
       return NextResponse.json({ error: locGuard.error.message }, { status: locGuard.error.status });
     }
+    if (review.reply) {
+      return NextResponse.json({ error: "Already answered" }, { status: 409 });
+    }
 
-    // Speichern
+    // Speichern (setzt answeredAt, prüft Doppelantwort)
     const res = await saveReply({
-      reviewId: params.id,
+      reviewId,
       tenantId: session.tenantId,
       text: text.trim(),
       authorUserId: session.userId,
@@ -52,7 +68,7 @@ export const POST = async (req: NextRequest, { params }: { params: { id: string 
 
     return NextResponse.json({ reply: res.reply }, { status: 200 });
   } catch (err) {
-    console.error(err);
+    console.error("[api/reviews/[id]/reply] POST:", err);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 };
