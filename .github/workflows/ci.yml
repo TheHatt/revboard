@@ -10,6 +10,29 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      # 👉 Falls du in GitHub Secrets echte Werte hinterlegst, werden die hier benutzt.
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET || 'test-nextauth-secret' }}
+      # Prisma DB (lokaler Service aus 'services.postgres')
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app?schema=public
+      NODE_ENV: test
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -23,8 +46,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run build
+      # Prisma vorbereiten
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Migrate database
+        run: npx prisma migrate deploy
+
+      # Optional: Seed (nur wenn dein Seed ohne externe APIs läuft)
+      # - name: Seed database
+      #   run: npm run seed
+
+      - name: Build
         run: npm run build
 
-      - name: Run tests
+      - name: Test
         run: npm run test -- --run
