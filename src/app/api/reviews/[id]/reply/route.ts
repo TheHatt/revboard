@@ -1,23 +1,24 @@
 // src/app/(app)/reviews/[id]/reply/route.ts
-import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 type AiTone = "neutral" | "freundlich" | "formell" | "ausführlich" | "knapp";
-type Params = { id: string };
 
-// optional:
+// optional: falls du Caching vermeiden willst
 // export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest, ctx: { params: Params }) {
-  const { id: reviewId } = ctx.params;
+export async function POST(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
+  const reviewId = params.id;
 
   try {
     // 1) Session laden
     const session = await getServerSession(authOptions);
-    const user = session?.user as unknown as
+    const user = session?.user as
       | { id: string; tenantId: string; locationIds: string[] }
       | undefined;
 
@@ -26,8 +27,13 @@ export async function POST(req: NextRequest, ctx: { params: Params }) {
     }
 
     // 2) Body lesen
-    const body = await req.json().catch(() => ({} as any));
-    const text = typeof body?.text === "string" ? body.text.trim() : "";
+    const body = (await req.json().catch(() => ({}))) as {
+      text?: unknown;
+      tone?: unknown;
+    };
+
+    const text =
+      typeof body?.text === "string" ? body.text.trim() : "";
     const tone: AiTone | undefined =
       typeof body?.tone === "string" ? (body.tone as AiTone) : undefined;
 
@@ -35,7 +41,7 @@ export async function POST(req: NextRequest, ctx: { params: Params }) {
       return NextResponse.json({ error: "Text fehlt" }, { status: 400 });
     }
 
-    // 3) Review holen + Tenancy prüfen
+    // 3) Review + Tenancy prüfen
     const review = await prisma.review.findUnique({
       where: { id: reviewId },
       select: {
