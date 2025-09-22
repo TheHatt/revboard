@@ -4,15 +4,6 @@ import ReviewsClient from "./ReviewsClient";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
-type SearchParams = {
-  cursor?: string;
-  take?: string;
-  rating?: string;     // "alle" | "1".."5"
-  status?: string;     // "alle" | "offen" | "beantwortet"
-  location?: string;   // "alle" | Standort-Name
-  range?: string;      // "vollständig" | "heute" | "7 Tage" | "30 Tage"
-};
-
 // Cursor enc/dec
 function encodeCursor(publishedAt: Date, id: string) {
   return `${publishedAt.toISOString()}_${id}`;
@@ -39,10 +30,10 @@ function normalizeFilters(sp: Record<string, string | string[] | undefined>) {
 }
 
 export default async function Page({
+  // ✅ Next 15: searchParams ist ein Promise
   searchParams,
 }: {
-  // ✅ Next 15: searchParams ist ein Promise
-  searchParams: Promise<SearchParams>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   // ---- Tenancy aus Session ableiten ----
   const session = await getServerSession(authOptions);
@@ -66,7 +57,7 @@ export default async function Page({
 
   // ---- URL-Filter lesen & validieren ----
   const sp = await searchParams; // ✅ Promise auflösen
-  const f = normalizeFilters(sp as any);
+  const f = normalizeFilters(sp);
 
   const selectedLocation =
     f.location && uiLocationOptions.includes(f.location) ? f.location : "alle";
@@ -161,9 +152,9 @@ export default async function Page({
       nextCursor={nextCursor}
       locationOptions={uiLocationOptions}
       serverFilters={{
-        rating: f.rating,
-        status: f.status,
-        range: f.range,
+        rating: f.rating!,
+        status: f.status!,
+        range: f.range!,
         location: selectedLocation,
         take,
       }}
