@@ -6,17 +6,16 @@ import { prisma } from "@/lib/prisma";
 
 type AiTone = "neutral" | "freundlich" | "formell" | "ausführlich" | "knapp";
 
-// optional: falls du Caching vermeiden willst
-// export const dynamic = "force-dynamic";
+// export const dynamic = "force-dynamic"; // optional
 
-export async function POST(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
-  const reviewId = params.id;
+export async function POST(req: Request, context: unknown) {
+  const reviewId = (context as any)?.params?.id as string | undefined;
+  if (!reviewId) {
+    return NextResponse.json({ error: "Ungültige URL: id fehlt" }, { status: 400 });
+  }
 
   try {
-    // 1) Session laden
+    // 1) Auth
     const session = await getServerSession(authOptions);
     const user = session?.user as
       | { id: string; tenantId: string; locationIds: string[] }
@@ -26,35 +25,18 @@ export async function POST(
       return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
     }
 
-    // 2) Body lesen
-    const body = (await req.json().catch(() => ({}))) as {
-      text?: unknown;
-      tone?: unknown;
-    };
+    // 2) Body
+    const body = (await req.json().catch(() => ({}))) as { text?: unknown; tone?: unknown };
+    const text = typeof body?.text === "string" ? body.text.trim() : "";
+    const tone: AiTone | undefined = typeof body?.tone === "string" ? (body.tone as AiTone) : undefined;
+    if (!text) return NextResponse.json({ error: "Text fehlt" }, { status: 400 });
 
-    const text =
-      typeof body?.text === "string" ? body.text.trim() : "";
-    const tone: AiTone | undefined =
-      typeof body?.tone === "string" ? (body.tone as AiTone) : undefined;
-
-    if (!text) {
-      return NextResponse.json({ error: "Text fehlt" }, { status: 400 });
-    }
-
-    // 3) Review + Tenancy prüfen
+    // 3) Review + Tenancy
     const review = await prisma.review.findUnique({
       where: { id: reviewId },
-      select: {
-        id: true,
-        tenantId: true,
-        locationId: true,
-        reply: { select: { text: true } },
-      },
+      select: { id: true, tenantId: true, locationId: true, reply: { select: { text: true } } },
     });
-
-    if (!review) {
-      return NextResponse.json({ error: "Review nicht gefunden" }, { status: 404 });
-    }
+    if (!review) return NextResponse.json({ error: "Review nicht gefunden" }, { status: 404 });
     if (review.tenantId !== user.tenantId) {
       return NextResponse.json({ error: "Kein Zugriff (Tenant-Mismatch)" }, { status: 403 });
     }
@@ -62,15 +44,11 @@ export async function POST(
       return NextResponse.json({ error: "Kein Zugriff auf diesen Standort" }, { status: 403 });
     }
     if (review.reply) {
-      return NextResponse.json(
-        { error: "Bereits beantwortet", replyText: review.reply.text },
-        { status: 409 }
-      );
+      return NextResponse.json({ error: "Bereits beantwortet", replyText: review.reply.text }, { status: 409 });
     }
 
-    // 4) Extern posten (TODO Google Business) – bei Erfolg lokal speichern
+    // 4) Persist
     const postedAt = new Date();
-
     const reply = await prisma.reply.create({
       data: {
         reviewId: review.id,
@@ -80,11 +58,7 @@ export async function POST(
         postedAt,
       },
     });
-
-    await prisma.review.update({
-      where: { id: review.id },
-      data: { answeredAt: postedAt },
-    });
+    await prisma.review.update({ where: { id: review.id }, data: { answeredAt: postedAt } });
 
     return NextResponse.json({
       ok: true,
