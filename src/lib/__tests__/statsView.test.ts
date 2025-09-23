@@ -3,12 +3,14 @@ import { getStatItems } from "@/lib/statsView";
 import type { StatsDTO } from "@/lib/stats";
 
 const base: StatsDTO = {
-  totalReviews: 10,
-  avgRating: 4.234,
-  replyRate: 0.42,
-  byDay: [],
-  byStars: [],
-};
+    totalReviews: 0,
+    avgRating: 0,
+    replyRate: 0,
+    unansweredCount: 0,     // ✅ neu
+    responseTimeP50: null,  // ✅ neu (in Sekunden oder null)
+    byDay: [],
+    byStars: [],
+  };
 
 describe("getStatItems", () => {
   it("formats values and includes labels/subtitles", () => {

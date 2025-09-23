@@ -42,6 +42,22 @@ export default function StatsClient({
         sub: labelForRange(filters.range ?? undefined),
         icon: CheckCircle2,
       },
+      {
+        key: "unansweredCount",
+        label: "Unbeantwortet",
+        value: intlNumber(stats.unansweredCount),
+        sub: labelForRange(filters.range ?? undefined),
+        icon: MessageSquare, // oder CircleHelp, je nach Geschmack
+      },
+      {
+        key: "responseTimeP50",
+        label: "Median Antwortzeit",
+        value: stats.responseTimeP50 == null
+          ? "—"
+          : formatDuration(stats.responseTimeP50), // s -> lesbar
+        sub: labelForRange(filters.range ?? undefined),
+        icon: CheckCircle2,
+      },
     ],
     // feingranulare Deps, damit nicht unnötig neu berechnet wird
     [stats.totalReviews, stats.avgRating, stats.replyRate, filters.range]
@@ -91,6 +107,16 @@ function intlNumber(n: number, opts: Intl.NumberFormatOptions = {}) {
 function formatPercent(n: number) {
   return `${Math.round(n * 100)}%`;
 }
+
+function formatDuration(totalSeconds: number) {
+    if (totalSeconds < 60) return `${totalSeconds}s`;
+    const minutes = Math.round(totalSeconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 48) return `${hours}h`;
+    const days = Math.round(hours / 24);
+    return `${days}d`;
+  }
 
 function labelForRange(range?: StatsFilters["range"] | null) {
   if (!range) return undefined;
