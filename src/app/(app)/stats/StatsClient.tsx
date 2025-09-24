@@ -5,6 +5,13 @@ import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Star, MessageSquare, CheckCircle2 } from "lucide-react";
 import type { StatsQuery, StatsDTO } from "@/lib/stats";
+import ReviewsByDayChart from "@/components/stats/charts/ReviewsByDayChart";
+import RatingByStarsChart from "@/components/stats/charts/RatingByStarsChart";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import ReviewsByWeekdayChart from "@/components/stats/charts/ReviewsByWeekdayChart";
+import RatingStackedByLocationChart from "@/components/stats/charts/RatingStackedByLocationChart";
+
+
 
 export type StatsFilters = {
   range?: StatsQuery["range"] | null;
@@ -18,6 +25,16 @@ export default function StatsClient({
   stats: StatsDTO;
   filters: StatsFilters;
 }) {
+    const router = useRouter();
+const pathname = usePathname();
+const sp = useSearchParams();
+
+function pushParam(key: string, value: string | null) {
+  const params = new URLSearchParams(sp?.toString());
+  if (value == null || value === "") params.delete(key);
+  else params.set(key, value);
+  router.push(`${pathname}?${params.toString()}`);
+}
   // Hook immer zuerst aufrufen (keine Bedingung davor)
   const items = useMemo(
     () => [
@@ -96,7 +113,25 @@ export default function StatsClient({
           </CardContent>
         </Card>
       ))}
+
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 mt-4">
+        <ReviewsByWeekdayChart
+            data={(stats as any).byWeekday /* erwartet [{weekday:"Mo",count:...}] */}
+            onSelectWeekday={(idx) => pushParam("weekday", String(idx))}
+        />
+        <RatingStackedByLocationChart
+            data={(stats as any).byLocationStars /* erwartet Array wie in Komponentendoc */}
+        />
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 mt-4">
+        <ReviewsByDayChart data={(stats as any).byDay} />
+        <RatingByStarsChart data={(stats as any).byStars} />
+        </div>
+
     </section>
+    
   );
 }
 
@@ -109,14 +144,14 @@ function formatPercent(n: number) {
 }
 
 function formatDuration(totalSeconds: number) {
-    if (totalSeconds < 60) return `${totalSeconds}s`;
-    const minutes = Math.round(totalSeconds / 60);
-    if (minutes < 60) return `${minutes}m`;
-    const hours = Math.round(minutes / 60);
-    if (hours < 48) return `${hours}h`;
-    const days = Math.round(hours / 24);
-    return `${days}d`;
-  }
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.round(totalSeconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  const days = Math.round(hours / 24);
+  return `${days}d`;
+}
 
 function labelForRange(range?: StatsFilters["range"] | null) {
   if (!range) return undefined;

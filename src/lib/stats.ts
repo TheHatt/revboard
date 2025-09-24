@@ -119,3 +119,4 @@ export async function getStats(
       byStars: [5, 4, 3, 2, 1].map((stars) => ({ stars, count: 0 })),
     };
   }
+
