@@ -10,6 +10,8 @@ const base: StatsDTO = {
     responseTimeP50: null,  // ✅ neu (in Sekunden oder null)
     byDay: [],
     byStars: [],
+    byWeekday: [],           
+    byLocationStars: [],
   };
 
 describe("getStatItems", () => {

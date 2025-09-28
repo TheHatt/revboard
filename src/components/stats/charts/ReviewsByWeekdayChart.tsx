@@ -9,25 +9,30 @@ type Bucket = { weekday: string; count: number };
 type Props = {
   data?: Bucket[];
   onSelectWeekday?: (weekdayIndex: number) => void; // 0=So..6=Sa
+  rightSlot?: React.ReactNode; // z.B. "Zu Rezensionen" Link/Button
 };
 
 const WEEKDAYS = ["So","Mo","Di","Mi","Do","Fr","Sa"];
 
-export default function ReviewsByWeekdayChart({ data, onSelectWeekday }: Props) {
+export default function ReviewsByWeekdayChart({ data, onSelectWeekday, rightSlot }: Props) {
   const hasData = Array.isArray(data) && data.length > 0;
   const normalized =
     hasData
       ? WEEKDAYS.map((label, idx) => ({
           weekday: label,
-          count: data.find(d => d.weekday === label || d.weekday === String(idx))?.count ?? 0,
+          count:
+            data.find(
+              d => d.weekday === label || d.weekday === String(idx)
+            )?.count ?? 0,
           _idx: idx,
         }))
       : [];
 
   return (
     <Card className="rounded-2xl">
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-base">Rezensionen nach Wochentag</CardTitle>
+        {rightSlot ?? null}
       </CardHeader>
       <CardContent className="h-64">
         {!hasData ? (

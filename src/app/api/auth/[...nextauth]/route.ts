@@ -16,8 +16,7 @@ const handler = NextAuth({
             await getTenantAndLocationsForUser((user as any).id);
           token.tid = tenantId;
           token.locs = allowedLocationIds;
-          // Optional: UI-Optionen cachen, wenn überschaubar viele Locations
-          token.locOpts = locationOptions;
+
         }
         return token;
       },
@@ -26,7 +25,6 @@ const handler = NextAuth({
         (session.user as any).id = (token as any).sub; // DB-User-ID
         (session.user as any).tenantId = (token as any).tid;
         (session.user as any).locationIds = (token as any).locs ?? [];
-        (session.user as any).locationOptions = (token as any).locOpts ?? undefined;
         return session;
       },
     },

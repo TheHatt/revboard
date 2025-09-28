@@ -1,18 +1,18 @@
-// src/app/layout.tsx
 import "./globals.css";
-import type { Metadata } from "next";
-import { AuthSessionProvider } from "@/components/providers/session-provider";
-import { ToastProvider } from "@/components/ui/toast";
+import type { ReactNode } from "react";
 
-export const metadata: Metadata = { title: "Revboard", description: "Login" };
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function AppLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="de">
-      <body className="min-h-screen bg-background text-foreground antialiased">
-        <AuthSessionProvider>
-          <ToastProvider>{children}</ToastProvider>
-        </AuthSessionProvider>
+    <html lang="de" className="dark">
+      <body className="min-h-dvh bg-background text-foreground antialiased">
+        {/* Falls du Header/Sidebar hast, lass die hier unverändert */}
+        
+          {/* ⬇️ Neu: zentriert + max. Breite + Seiten-Padding */}
+          <div className="mx-auto w-full max-w-screen-2xl px-4 lg:px-6">
+            {children}
+          </div>
+        
+        {/* Footer falls vorhanden */}
       </body>
     </html>
   );

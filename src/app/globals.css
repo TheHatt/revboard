@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @plugin "tailwindcss-animate";
 
-/* ---- Farb-Variablen (shadcn) ---- */
+
 :root {
   --background: 0 0% 100%;
   --foreground: 222.2 47.4% 11.2%;
@@ -16,19 +16,19 @@
 }
 
 .dark {
-  --background: 222.2 84% 4.9%;
+  --background: 0, 0%, 2%;
   --foreground: 210 40% 98%;
-  --card: 222.2 84% 4.9%;
+  --card: 0, 1%, 8%;
   --card-foreground: 210 40% 98%;
   --popover: 222.2 84% 4.9%;
   --popover-foreground: 210 40% 98%;
-  --border: 217.2 32.6% 17.5%;
+  --border: 
   --input: 217.2 32.6% 17.5%;
   --accent: 217.2 32.6% 17.5%;
   --accent-foreground: 210 40% 98%;
 }
 
-/* ---- Tailwind v4: mappe Tokens zu Utilities ---- */
+
 @theme {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -42,6 +42,9 @@
   --color-accent-foreground: hsl(var(--accent-foreground));
 }
 
+
+
 /* Optional: Grundlayout */
-html, body, :root { height: 100%; }
+html, body, :root { height: 100%; margin: 0; padding: 0;}
 body { background: var(--color-background); color: var(--color-foreground); }
+*, *::before, *::after { box-sizing: border-box; }

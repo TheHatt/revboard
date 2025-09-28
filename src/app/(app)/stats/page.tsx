@@ -64,6 +64,7 @@ export default async function Page({
   });
 
   return (
+    <div className="mx-auto w-full max-w-7xl px-4 lg:px-6">
     <main className="flex flex-col gap-6">
       <header>
         <FilterBarStats
@@ -80,5 +81,6 @@ export default async function Page({
         />
       </section>
     </main>
+    </div>
   );
 }

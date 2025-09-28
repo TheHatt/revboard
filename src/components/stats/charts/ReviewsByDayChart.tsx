@@ -5,11 +5,15 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-type Point = { date: string; count: number };
+export type Point = { date: string; count: number };
 
 export default function ReviewsByDayChart({
   data,
-}: { data?: Point[] }) {
+  onBrushChange,
+}: {
+  data?: Point[];
+  onBrushChange?: (fromISO: string, toISO: string) => void; // ⬅️ neu
+}) {
   const hasData = Array.isArray(data) && data.length > 0;
 
   return (
@@ -30,8 +34,19 @@ export default function ReviewsByDayChart({
               <YAxis allowDecimals={false} />
               <Tooltip />
               <Line type="monotone" dataKey="count" />
-              {/* Interaktiver Zoom/Scroll */}
-              <Brush dataKey="date" travellerWidth={8} height={20} />
+              <Brush
+                dataKey="date"
+                travellerWidth={8}
+                height={20}
+                onChange={(range: any) => {
+                  if (!onBrushChange || !range) return;
+                  const s = Math.max(0, range.startIndex ?? 0);
+                  const e = Math.min(data.length - 1, range.endIndex ?? data.length - 1);
+                  const from = data[s]?.date;
+                  const to   = data[e]?.date;
+                  if (from && to) onBrushChange(from, to);
+                }}
+              />
             </LineChart>
           </ResponsiveContainer>
         )}
