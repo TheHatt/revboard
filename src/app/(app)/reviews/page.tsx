@@ -3,8 +3,9 @@ import { prisma } from "@/lib/prisma";
 import ReviewsClient from "./ReviewsClient";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
-// Cursor enc/dec
+// Cursor enc/dec (stable; wir verwenden in der Query nur id als Cursor)
 function encodeCursor(publishedAt: Date, id: string) {
   return `${publishedAt.toISOString()}_${id}`;
 }
@@ -16,60 +17,90 @@ function decodeCursor(cursor?: string) {
   return isNaN(d.getTime()) ? null : { publishedAt: d, id };
 }
 
-// URL-Filter normalisieren
-function normalizeFilters(sp: Record<string, string | string[] | undefined>) {
+// ---------------- URL-FILTER ----------------
+type SP = Record<string, string | string[] | undefined>;
+
+function normalizeFilters(sp: SP) {
   const raw = (k: string) => (Array.isArray(sp[k]) ? (sp[k] as string[])[0] : sp[k]) ?? null;
+
+  const ratingStr = raw("rating");                 // z.B. "5" | "alle"
+  const statusStr = raw("status");                 // "offen" | "beantwortet" | "alle"
+  const range = (raw("range") as "vollständig" | "heute" | "7 Tage" | "30 Tage" | null) ?? "vollständig";
+  const location = raw("location") ?? "alle";      // Standort-Name (UI) oder "alle"
+  const takeStr = raw("take") ?? "12";
+  const cursor = raw("cursor") ?? undefined;
+  const q = raw("q")?.trim() ?? undefined;
+
   return {
-    rating: raw("rating") ?? "alle",
-    status: raw("status") ?? "alle",
-    range: raw("range") ?? "vollständig",
-    location: raw("location") ?? "alle", // Standort-Name oder "alle"
-    take: raw("take"),
-    cursor: raw("cursor"),
+    rating: ratingStr && ratingStr !== "alle" ? Number(ratingStr) : undefined,
+    status: statusStr === "offen" ? "offen" : statusStr === "beantwortet" ? "beantwortet" : undefined,
+    range,
+    location, // UI: Name oder "alle"
+    take: Math.max(1, Math.min(50, Number(takeStr) || 12)),
+    cursor,
+    q,
   };
 }
 
 export default async function Page({
-  // ✅ Next 15: searchParams ist ein Promise
+  // ✅ Next 15: searchParams ist ein Promise<ReadonlyURLSearchParams>
   searchParams,
 }: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
+  searchParams: Promise<SP>;
 }) {
-  // ---- Tenancy aus Session ableiten ----
+  // ---- Session / Tenancy ----
   const session = await getServerSession(authOptions);
-  const user = session?.user as
-    | { id: string; tenantId: string; locationIds: string[] }
-    | undefined;
-  if (!user?.id) {
-    throw new Error("Keine Session oder user.id – bitte einloggen.");
+  const user = session?.user as { id?: string; tenantId?: string; locationIds?: string[] } | undefined;
+
+  if (!user?.id || !user?.tenantId) {
+    redirect("/"); // freundlich zur Login-Seite
   }
 
-  const tenantId = user.tenantId;
-  const allowedLocationIds = user.locationIds ?? [];
+  const tenantId = "demo-tenant-id";
+  const allowedLocationIds = Array.isArray(user!.locationIds) ? user!.locationIds! : [];
 
-  // Standortnamen frisch aus DB (immer aktuell)
+  // ---- URL-Filter lesen ----
+  const sp = await searchParams;
+  const f = normalizeFilters(sp);
+
+  // ---- Standorte laden (Name + ID) für UI & Validierung ----
   const locations = await prisma.location.findMany({
-    where: { tenantId, ...(allowedLocationIds.length ? { id: { in: allowedLocationIds } } : {}) },
+    where: {
+      tenantId,
+      ...(allowedLocationIds.length ? { id: { in: allowedLocationIds } } : {}),
+    },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
+
   const uiLocationOptions = ["alle", ...locations.map((l) => l.name)];
-
-  // ---- URL-Filter lesen & validieren ----
-  const sp = await searchParams; // ✅ Promise auflösen
-  const f = normalizeFilters(sp);
-
-  const selectedLocation =
-    f.location && uiLocationOptions.includes(f.location) ? f.location : "alle";
-
-  const take = Math.min(Math.max(Number(f.take ?? 12), 1), 50);
+  const selectedLocationName = uiLocationOptions.includes(f.location) ? f.location : "alle";
 
   // ---- WHERE-Bedingungen bauen ----
   const where: any = { tenantId };
 
+  // Basis: Tenancy-Guard auf Location-IDs (immer anwenden, falls vorhanden)
+  if (allowedLocationIds.length) {
+    where.locationId = { in: allowedLocationIds };
+  }
+
+  // Standort-Filter nach NAME (UI), zusätzlich zu obigem ID-Guard
+  if (selectedLocationName !== "alle") {
+    // Falls Name → ID finden & zusätzlich zwingen (robuster und schneller)
+    const match = locations.find((l) => l.name === selectedLocationName);
+    if (match) {
+      where.locationId = allowedLocationIds.length
+        ? { in: allowedLocationIds.filter((id) => id === match.id) }
+        : match.id;
+    } else {
+      // Kein Standort mit dem Namen im erlaubten Scope → leeres Ergebnis erzwingen
+      where.locationId = "__NONE__";
+    }
+  }
+
   // Bewertung
-  if (f.rating && f.rating !== "alle") {
-    where.rating = Number(f.rating);
+  if (typeof f.rating === "number") {
+    where.rating = f.rating;
   }
 
   // Status
@@ -92,27 +123,18 @@ export default async function Page({
     where.publishedAt = { gte: from, lte: now };
   }
 
-  // Standort per NAME (bestehende UI) ODER "alle"
-  if (selectedLocation && selectedLocation !== "alle") {
-    where.location = { name: selectedLocation };
-  }
-
-  // **Scope-Guard**: nur erlaubte Locations
-  if (allowedLocationIds.length > 0) {
-    where.locationId = where.locationId
-      ? allowedLocationIds.includes(where.locationId)
-        ? where.locationId
-        : "__NONE__"
-      : { in: allowedLocationIds };
+  // Freitextsuche (insensitive)
+  if (f.q) {
+    where.text = { contains: f.q, mode: "insensitive" };
   }
 
   // ---- Cursor / Pagination ----
-  const cursorObj = decodeCursor(f.cursor ?? undefined);
+  const cursorObj = decodeCursor(f.cursor);
 
   const results = await prisma.review.findMany({
     where,
-    orderBy: [{ publishedAt: "desc" }, { id: "desc" }],
-    take: take + 1, // +1 für „weitere laden“
+    orderBy: [{ publishedAt: "desc" as const }, { id: "desc" as const }],
+    take: f.take + 1, // +1 für „weitere laden“
     ...(cursorObj ? { cursor: { id: cursorObj.id }, skip: 1 } : {}),
     include: {
       location: { select: { name: true } },
@@ -120,10 +142,10 @@ export default async function Page({
     },
   });
 
-  const hasMore = results.length > take;
-  const slice = results.slice(0, take);
+  const hasMore = results.length > f.take;
+  const slice = results.slice(0, f.take);
 
-  // → DTO fürs Frontend
+  // DTO fürs Frontend
   const reviews = slice.map((r) => ({
     id: r.id,
     author: r.authorName ?? "Anonym",
@@ -152,11 +174,11 @@ export default async function Page({
       nextCursor={nextCursor}
       locationOptions={uiLocationOptions}
       serverFilters={{
-        rating: f.rating!,
-        status: f.status!,
-        range: f.range!,
-        location: selectedLocation,
-        take,
+        rating: typeof f.rating === "number" ? String(f.rating) : "alle",
+        status: f.status ?? "alle",
+        range: f.range ?? "vollständig",
+        location: selectedLocationName,
+        take: f.take,
       }}
     />
   );

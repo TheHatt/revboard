@@ -5,9 +5,16 @@ import type { NextAuthOptions } from "next-auth";
 import { getServerSession } from "next-auth";
 import { compare } from "bcrypt";
 import { prisma } from "@/lib/prisma";
+import { getTenantAndLocationsForUser } from "@/lib/tenancy";
+import { TenantRole } from "@prisma/client"; // ✅ Enum aus deinem Schema
 
-// Tipp: Ergänze zusätzlich die Typ-Augmentation in src/types/next-auth.d.ts (wie besprochen),
-// damit TS session.user.id / token.tenantId etc. kennt.
+/**
+ * Einheitliche Feldnamen (ENDZUSTAND):
+ * - user/token: id, tenantId, role, locationIds, locationOptions
+ */
+
+const DEMO_TENANT_ID = "demo-tenant-id";
+const DEMO_TENANT_SLUG = "demo";
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
@@ -25,110 +32,151 @@ export const authOptions: NextAuthOptions = {
 
         const user = await prisma.user.findUnique({
           where: { email },
-          include: {
-            memberships: {
-              include: { tenant: true },
-            },
-          },
+          include: { memberships: { include: { tenant: true } } },
         });
         if (!user || !user.passwordHash) return null;
 
         const ok = await compare(String(creds.password), user.passwordHash);
         if (!ok) return null;
 
-        // Mitgliedschaft wählen (einfach: erste)
-        const membership = user.memberships?.[0];
-        if (!membership) return null;
+        // 1) Demo-Tenant sicherstellen (ohne plan → Default: BASIC)
+        const demoTenant = await prisma.tenant.upsert({
+          where: { id: DEMO_TENANT_ID },
+          update: {},
+          create: {
+            id: DEMO_TENANT_ID,
+            name: "Demo Tenant",
+            slug: DEMO_TENANT_SLUG,
+            // plan NICHT setzen → Default aus schema.prisma greift (BASIC)
+          },
+        });
 
-        const tenantId = membership.tenantId;
-        const role = (membership?.role as "admin" | "editor" | "viewer") ?? "editor";
+        // 2) Membership des Users in diesem Tenant sicherstellen
+        await prisma.membership.upsert({
+          where: {
+            userId_tenantId: { userId: user.id, tenantId: demoTenant.id },
+          },
+          update: {},
+          create: {
+            userId: user.id,
+            tenantId: demoTenant.id,
+            role: TenantRole.ADMIN, // ✅ enum-wert (ADMIN | EDITOR)
+          },
+        });
 
-        // Erlaubte Locations: bevorzugt via LocationAccess; sonst alle Locations des Tenants
-        let allowedLocationIds: string[] = [];
+        // 3) Aktive Tenancy/Role für die Session
+        const tenantId = demoTenant.id;
+        const role = TenantRole.ADMIN;
+
+        // 4) Erlaubte Locations für genau diesen Tenant ermitteln
+        let locationIds: string[] = [];
         try {
           const accessRows = await prisma.locationAccess.findMany({
             where: { userId: user.id, location: { tenantId } },
             select: { locationId: true },
           });
           if (accessRows.length > 0) {
-            allowedLocationIds = accessRows.map((r) => r.locationId);
+            locationIds = accessRows.map((r) => r.locationId);
           } else {
             const locs = await prisma.location.findMany({
               where: { tenantId },
               select: { id: true },
             });
-            allowedLocationIds = locs.map((l) => l.id);
+            locationIds = locs.map((l) => l.id);
           }
         } catch {
-          // Falls es LocationAccess (noch) nicht gibt, fallback: alle Locations des Tenants
           const locs = await prisma.location.findMany({
             where: { tenantId },
             select: { id: true },
           });
-          allowedLocationIds = locs.map((l) => l.id);
+          locationIds = locs.map((l) => l.id);
         }
 
-        // Objekt, das in den JWT übernommen wird
+        // 5) UI-Optionen (id/label) für diesen Tenant
+        const locationOptions = await prisma.location
+          .findMany({
+            where: { tenantId, ...(locationIds.length ? { id: { in: locationIds } } : {}) },
+            select: { id: true, name: true },
+            orderBy: { name: "asc" },
+          })
+          .then((rows) => rows.map((r) => ({ id: r.id, label: r.name })));
+
+        // 6) Objekt für JWT/Session
         return {
           id: user.id,
           email: user.email ?? undefined,
           name: user.name ?? undefined,
           tenantId,
           role,
-          allowedLocationIds,
+          locationIds,
+          locationOptions,
         } as any;
       },
     }),
   ],
   callbacks: {
     async jwt({ token, user }) {
-      // Beim Login: zusätzliche Felder in den JWT legen
+      // Login: Felder aus authorize → in den Token
       if (user) {
-        // token.sub enthält i. d. R. die User-ID automatisch
-        (token as any).userId = (user as any).id;
+        (token as any).id = (user as any).id ?? token.sub;
         (token as any).tenantId = (user as any).tenantId;
         (token as any).role = (user as any).role;
-        (token as any).allowedLocationIds = (user as any).allowedLocationIds ?? [];
+        (token as any).locationIds = (user as any).locationIds ?? [];
+        (token as any).locationOptions = (user as any).locationOptions ?? [];
       }
+
+      // Fallback (z. B. andere Provider): Tenancy aus DB ziehen
+      if (!(token as any).tenantId && token.sub) {
+        try {
+          const { tenantId, allowedLocationIds, locationOptions } =
+            await getTenantAndLocationsForUser(token.sub);
+          (token as any).tenantId = tenantId;
+          (token as any).locationIds = allowedLocationIds ?? [];
+          (token as any).locationOptions = locationOptions ?? [];
+        } catch {}
+      }
+
       return token;
     },
     async session({ session, token }) {
-      // Werte aus dem JWT in die Session mappen
-      if (session.user) {
-        // Sichere ID-Zuweisung: bevorzugt token.sub, sonst userId
-        (session.user as any).id = (token.sub as string) ?? (token as any).userId;
-        (session.user as any).tenantId = (token as any).tenantId;
-        (session.user as any).role = (token as any).role;
-        (session.user as any).allowedLocationIds = (token as any).allowedLocationIds ?? [];
-      }
-      // Optionaler, älterer Shortcut – kannst du entfernen, wenn überall session.user.id genutzt wird:
-      (session as any).userId = (token as any).userId ?? token.sub;
-
+      (session.user as any).id = (token as any).id ?? token.sub;
+      (session.user as any).tenantId = (token as any).tenantId;
+      (session.user as any).role = (token as any).role;
+      (session.user as any).locationIds = (token as any).locationIds ?? [];
+      (session.user as any).locationOptions = (token as any).locationOptions ?? [];
       return session;
     },
   },
-  pages: {
-    // signIn: "/login",
-  },
-  debug: process.env.NODE_ENV === "development",
 };
 
-// Helper: serverseitige Session abrufen und auf kompaktes Objekt mappen
+// ---- Helper für Server Components / Pages ----
+
 export async function getSession() {
   const session = await getServerSession(authOptions);
-  if (!session) return null;
+  if (!session?.user) return null;
 
-  const userId =
-    (session as any).userId ??
-    (session.user as any)?.id;
+  const u = session.user as unknown as {
+    id?: string;
+    tenantId?: string;
+    role?: TenantRole | string;
+    locationIds?: string[];
+    locationOptions?: { id: string; label: string }[];
+  };
 
-  const role = (session.user as any)?.role as "viewer" | "editor" | "admin" | undefined;
-  const tenantId = (session.user as any)?.tenantId as string | undefined;
-  const allowedLocationIds = (session.user as any)?.allowedLocationIds ?? [];
+  if (!u?.id || !u?.tenantId) return null;
 
-  if (!userId || !role || !tenantId) return null;
-  return { userId, role, tenantId, allowedLocationIds };
+  return {
+    userId: u.id,
+    tenantId: u.tenantId,
+    role: (u.role as any) ?? TenantRole.EDITOR,
+    locationIds: Array.isArray(u.locationIds) ? u.locationIds : [],
+    locationOptions: u.locationOptions ?? [],
+    session,
+  };
 }
 
-// Optional: syntactic sugar, damit du in Server Components einfach `await auth()` nutzen kannst
-export const auth = () => getServerSession(authOptions);
+// Bequeme Alias-Helper:
+export function getServerAuthSession() {
+  return getServerSession(authOptions);
+}
+export const auth = getServerAuthSession;

@@ -111,23 +111,23 @@ export default function StatsClient({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">{/* vorher: space-y-6 */}
       {/* REIHE 1: 4 kleine Cards (breiter, 12er-Grid; je 3 Spalten) */}
       <section
         aria-label="Kernkennzahlen"
-        className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-12"
+        className="grid grid-cols-1 gap-8 sm:grid-cols-2 xl:grid-cols-12"
       >
         {kpis.map((it) => (
           <div key={it.key} className="xl:col-span-3">
-            <Card className="rounded-2xl">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+            <Card className="rounded-2xl shadow-sm hover:shadow transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between pb-1">
+                <CardTitle className="text-[13px] font-medium text-muted-foreground tracking-tight">
                   {it.label}
                 </CardTitle>
-                <it.icon className="size-5" aria-hidden />
+                <it.icon className="size-4 opacity-70" aria-hidden />
               </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-semibold leading-tight">{it.value}</div>
+              <CardContent className="pt-0">
+                <div className="text-[28px] font-semibold leading-none">{it.value}</div>
                 {it.sub ? (
                   <p className="mt-1 text-xs text-muted-foreground">{it.sub}</p>
                 ) : null}
@@ -147,7 +147,7 @@ export default function StatsClient({
       {weekdayParam && (
         <div className="flex flex-wrap gap-2">
           <button
-            className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm"
+            className="inline-flex items-center gap-2 rounded-full border bg-background/60 px-3 py-1 text-sm shadow-sm"
             onClick={() => setParam("weekday", null)}
             aria-label="Wochentag-Filter entfernen"
           >
@@ -173,7 +173,7 @@ export default function StatsClient({
       </section>
 
       {/* REIHE 3: 2 mittlere Cards (je 6 Spalten = so breit wie 4 kleine) */}
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+      <section className="grid grid-cols-1 gap-8 xl:grid-cols-12">
         <div className="xl:col-span-6">
           <ReviewsByHourInline data={(stats as any).byHour} />
         </div>
@@ -194,7 +194,7 @@ export default function StatsClient({
       </section>
 
       {/* REIHE 4: 2 mittlere Cards (Keywords + Sterne) */}
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+      <section className="grid grid-cols-1 gap-8 xl:grid-cols-12">
         <div className="xl:col-span-6">
           <TopKeywordsChart
             data={(stats as any).topKeywords /* optional: [{term,count}] */}
@@ -226,11 +226,11 @@ function ReviewsByHourInline({
     : [];
 
   return (
-    <Card className="rounded-2xl">
+    <Card className="rounded-2xl shadow-sm hover:shadow transition-shadow">
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Rezensionen nach Uhrzeit</CardTitle>
       </CardHeader>
-      <CardContent className="h-72">
+      <CardContent className="h-80">{/* vorher: h-72 */}
         {!hasData ? (
           <div className="h-full grid place-items-center text-sm text-muted-foreground">
             Noch keine Stundendaten vorhanden.
@@ -239,9 +239,18 @@ function ReviewsByHourInline({
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={rows}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="hour" tickMargin={6} />
+              <XAxis
+                dataKey="hour"
+                tickMargin={6}
+                ticks={[0, 3, 6, 9, 12, 15, 18, 21]}
+              />
               <YAxis allowDecimals={false} />
-              <Tooltip />
+              <Tooltip
+                formatter={(val: any) => [Intl.NumberFormat().format(val), "Rezensionen"]}
+                labelFormatter={(h) =>
+                  `Uhrzeit: ${String(h).padStart(2, "0")}:00`
+                }
+              />
               <Bar dataKey="count" />
             </BarChart>
           </ResponsiveContainer>

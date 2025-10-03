@@ -287,35 +287,27 @@ function emptyStats(): StatsDTO {
   };
 }
 // Welche Textfelder probieren wir in der Review-Tabelle?
-const REVIEW_TEXT_CANDIDATES = ["content","text","body","comment","message","reviewText","description"] as const;
+const REVIEW_TEXT_CANDIDATES = ["text"] as const;
 
 /**
  * Versucht nacheinander, ein vorhandenes Textfeld per Prisma zu laden.
  * Bricht beim ersten Erfolg ab. Gibt [] zurück, wenn kein Feld existiert.
  */
 async function fetchReviewTexts(where: any): Promise<string[]> {
-  for (const field of REVIEW_TEXT_CANDIDATES) {
-    try {
-      // Prisma-Typen umgehen wir hier bewusst mit "as any", um flexibel zu sein.
-      const rows = await (prisma.review as any).findMany({
-        where,
-        select: { [field]: true },
-        // Limitiere hier nicht, damit die Häufigkeiten stimmen; bei sehr großen Datenmengen
-        // ggf. in Batches streamen oder eine Periode filtern (du hast ohnehin range/from-to).
-      });
-      // Validieren, ob das Feld wirklich da ist (kein Prisma-Client-Error)
-      if (Array.isArray(rows) && rows.length >= 0 && rows[0] && field in rows[0]) {
-        return rows
-          .map((r: any) => String(r[field] ?? ""))
-          .filter((s: string) => s && s.trim().length > 0);
-      }
-    } catch {
-      // Feld existiert nicht → nächste Kandidaten-Spalte probieren
-      continue;
-    }
+  try {
+    const rows = await prisma.review.findMany({
+      where,
+      select: { text: true },
+    });
+    return rows
+      .map((r) => String((r as any).text ?? ""))
+      .filter((s) => s && s.trim().length > 0);
+  } catch {
+    // Falls das Feld nicht existiert oder Prisma-Typen anders sind:
+    return [];
   }
-  return [];
 }
+
 
 /** sehr simpler Tokenizer: split by non-letters, minLen=3, Stopwörter/Numbers raus */
 function tokenizeDE(text: string): string[] {

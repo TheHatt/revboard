@@ -1,75 +1,102 @@
 // src/app/(app)/stats/page.tsx
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getStats, type StatsQuery } from "@/lib/stats";
 import StatsClient from "./StatsClient";
 import FilterBarStats from "./FilterBarStats";
+import { redirect } from "next/navigation";
 
-type SP = Record<string, string | string[] | undefined>;
+type SPRecord = Record<string, string | string[] | undefined>;
+type SP = URLSearchParams | SPRecord;
 
+// Robust für URLSearchParams ODER Record
 function normalize(sp: SP) {
-  const raw = (k: string) => (Array.isArray(sp[k]) ? (sp[k] as string[])[0] : sp[k]) ?? null;
-  const range = (raw("range") as StatsQuery["range"]) ?? "30 Tage";
-  const loc = raw("location"); // erwartet: "alle" | locationId
+  const isSearchParams = typeof (sp as any)?.get === "function";
+
+  const getVal = (key: string): string | null => {
+    if (isSearchParams) {
+      const v = (sp as URLSearchParams).get(key);
+      return v === null ? null : v;
+    }
+    const rec = sp as SPRecord;
+    const raw = rec[key];
+    if (Array.isArray(raw)) return raw[0] ?? null;
+    return (raw as string | undefined) ?? null;
+  };
+
+  // Default jetzt "vollständig", damit sofort Daten sichtbar sind
+  const range = (getVal("range") as StatsQuery["range"]) ?? "vollständig";
+  const loc = getVal("location"); // "alle" | <locationId>
   return {
     range,
-    locationId: !loc || loc === "alle" || loc === "all" ? null : (loc as string),
+    locationId: !loc || loc === "alle" || loc === "all" ? undefined : (loc as string),
   };
 }
 
 export default async function Page({
   searchParams,
 }: {
-  // Next.js 15: searchParams ist ein Promise
+  // Next 15: Promise<URLSearchParams>, ältere Setups reichen auch ein Record
   searchParams: Promise<SP>;
 }) {
   // --- Session / Tenancy ---
-  const session = await getServerSession(authOptions);
-  const user = session?.user as
-    | { id: string; tenantId: string; locationIds?: string[] }
-    | undefined;
-  if (!user?.id || !user.tenantId) {
-    throw new Error("Nicht eingeloggt oder fehlende Tenancy.");
+  const session = await auth();
+  const user = session?.user;
+  if (!user?.id || !user?.tenantId) {
+    redirect("/");
   }
 
   const tenantId = user.tenantId;
-  const allowedLocationIds = user.locationIds ?? [];
+  const allowedLocationIds =
+    Array.isArray(user.locationIds) && user.locationIds.length > 0
+      ? user.locationIds
+      : undefined;
 
   // --- Locations laden (Name + ID) ---
   const locs = await prisma.location.findMany({
-    where: { tenantId, ...(allowedLocationIds.length ? { id: { in: allowedLocationIds } } : {}) },
+    where: {
+      tenantId,
+      ...(allowedLocationIds ? { id: { in: allowedLocationIds } } : {}),
+    },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
 
-  // ✅ EXAKT die Struktur, die FilterBarStats erwartet: { id, label }[]
   const locationOptions: { id: string; label: string }[] = [
     { id: "alle", label: "Alle Standorte" },
     ...locs.map((l) => ({ id: l.id, label: l.name })),
   ];
 
-  // --- URL lesen (Promise!) & filtern ---
+  // --- URL lesen & normalisieren ---
   const sp = await searchParams;
   const f = normalize(sp);
 
-  // Falls ungültige locationId ankommt, auf null zurücksetzen
+  // Nur zulässige locationId durchlassen
   const validLocationId =
-    f.locationId && locs.some((l) => l.id === f.locationId) ? f.locationId : null;
+    f.locationId && locs.some((l) => l.id === f.locationId) ? f.locationId : undefined;
+
+  // --- DEV: kleiner Mismatch-Check (nur Konsole) ---
+  if (process.env.NODE_ENV !== "production") {
+    const [countForSessionTenant, allByTenant] = await Promise.all([
+      prisma.review.count({ where: { tenantId } }),
+      prisma.review.groupBy({ by: ["tenantId"], _count: { _all: true } }),
+    ]);
+    console.log("[stats] session.tenantId =", tenantId, "count =", countForSessionTenant);
+    console.log("[stats] reviews by tenant =", allByTenant);
+  }
 
   // --- Stats ziehen ---
   const stats = await getStats(tenantId, allowedLocationIds, {
     range: f.range,
-    locationId: validLocationId ?? undefined,
+    locationId: validLocationId,
   });
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 lg:px-6">
     <main className="flex flex-col gap-6">
       <header>
         <FilterBarStats
           initialRange={f.range}
-          initialLocationId={validLocationId ?? undefined}
+          initialLocationId={validLocationId}
           locationOptions={locationOptions}
         />
       </header>
@@ -77,10 +104,10 @@ export default async function Page({
       <section>
         <StatsClient
           stats={stats}
-          filters={{ range: f.range, locationId: validLocationId }}
+          // StatsClient erwartet locationId?: string | null
+          filters={{ range: f.range, locationId: validLocationId ?? null }}
         />
       </section>
     </main>
-    </div>
   );
 }
