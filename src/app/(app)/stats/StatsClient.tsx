@@ -11,7 +11,7 @@ import RatingByStarsChart from "@/components/stats/charts/RatingByStarsChart";
 import TimeSeriesReviewsAndRating from "@/components/stats/charts/TimeSeriesReviewsAndRating";
 import TopKeywordsChart from "@/components/stats/charts/TopKeywordsChart";
 
-// Recharts für das Uhrzeit-Chart (inline-Komponente unten)
+// Recharts (nur für Uhrzeit-Inhaltskomponente)
 import {
   ResponsiveContainer,
   BarChart,
@@ -34,7 +34,6 @@ export default function StatsClient({
   stats: StatsDTO;
   filters: StatsFilters;
 }) {
-  // Router/Params
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -54,14 +53,14 @@ export default function StatsClient({
         else params.set(k, v);
       });
     }
-    return `/rezensionen?${params.toString()}`;
+    return `/reviews?${params.toString()}`;
   }
 
-  const weekdayParam = sp.get("weekday"); // "0".."6" oder null
+  const weekdayParam = sp.get("weekday");
   const weekdayLabel = (idx: number) =>
     ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"][idx] ?? String(idx);
 
-  /** ---------- KPI ROW (4 kleine Cards) ---------- */
+  // ── KPI Cards (bleiben als Cards hier im StatsClient) ────────────────────────
   const kpis = useMemo(
     () => [
       {
@@ -82,7 +81,6 @@ export default function StatsClient({
         key: "unanswered_and_reply",
         label: "Unbeantwortet & Antwortquote",
         value: intlNumber(stats.unansweredCount),
-        // Zeige Antwortquote in derselben Card
         sub: `Antwortquote ${formatPercent(stats.replyRate)}`,
         icon: MessageSquare,
       },
@@ -91,7 +89,6 @@ export default function StatsClient({
         label: "Antwortzeit (Median)",
         value:
           stats.responseTimeP50 == null ? "—" : formatDuration(stats.responseTimeP50),
-        // SLA % < 24h in dieser Card
         sub:
           typeof (stats as any).slaUnder24hRate === "number"
             ? `${Math.round(((stats as any).slaUnder24hRate as number) * 100)}% < 24h`
@@ -111,15 +108,12 @@ export default function StatsClient({
   }
 
   return (
-    <div className="space-y-8">{/* vorher: space-y-6 */}
-      {/* REIHE 1: 4 kleine Cards (breiter, 12er-Grid; je 3 Spalten) */}
-      <section
-        aria-label="Kernkennzahlen"
-        className="grid grid-cols-1 gap-8 sm:grid-cols-2 xl:grid-cols-12"
-      >
+    <div className="grid grid-cols-12 gap-6">
+      {/* REIHE 1: 4 kleine KPI-Cards */}
+      <section className="col-span-12 grid grid-cols-12 gap-6" aria-label="Kernkennzahlen">
         {kpis.map((it) => (
-          <div key={it.key} className="xl:col-span-3">
-            <Card className="rounded-2xl shadow-sm hover:shadow transition-shadow">
+          <div key={it.key} className="col-span-12 sm:col-span-6 xl:col-span-3">
+            <Card className="h-full rounded-2xl shadow-sm transition-shadow hover:shadow">
               <CardHeader className="flex flex-row items-center justify-between pb-1">
                 <CardTitle className="text-[13px] font-medium text-muted-foreground tracking-tight">
                   {it.label}
@@ -131,7 +125,6 @@ export default function StatsClient({
                 {it.sub ? (
                   <p className="mt-1 text-xs text-muted-foreground">{it.sub}</p>
                 ) : null}
-                {/* Mini-Verteilung (optional) nur für Antwortzeit */}
                 {it.key === "responseTimeP50" ? (
                   <MiniSparkline
                     buckets={(stats as any).responseTimeBuckets as number[] | undefined}
@@ -143,9 +136,9 @@ export default function StatsClient({
         ))}
       </section>
 
-      {/* Aktiv-Filter (Wochentag) als Chip */}
+      {/* Aktiver Wochentags-Filter */}
       {weekdayParam && (
-        <div className="flex flex-wrap gap-2">
+        <div className="col-span-12 flex flex-wrap gap-2">
           <button
             className="inline-flex items-center gap-2 rounded-full border bg-background/60 px-3 py-1 text-sm shadow-sm"
             onClick={() => setParam("weekday", null)}
@@ -158,66 +151,101 @@ export default function StatsClient({
         </div>
       )}
 
-      {/* REIHE 2: 1 große Card (über volle Breite – 12 Spalten) */}
-      <section className="grid grid-cols-1 xl:grid-cols-12">
-        <div className="xl:col-span-12">
-          <TimeSeriesReviewsAndRating
-            counts={(stats as any).byDay}
-            avgRatings={(stats as any).byDayAvgRating /* optional */}
-            onBrushChange={(from: string, to: string) => {
-              setParam("from", from);
-              setParam("to", to);
-            }}
-          />
+      {/* REIHE 2: 1 große Card – Shell hier, Inhalt in Komponente */}
+      <section className="col-span-12">
+        <Card className="h-full rounded-2xl shadow-sm transition-shadow hover:shadow">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              Rezensionen pro Tag & Ø-Bewertung über Zeit
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TimeSeriesReviewsAndRating
+              counts={(stats as any).byDay}
+              avgRatings={(stats as any).byDayAvgRating}
+              onBrushChange={(from: string, to: string) => {
+                setParam("from", from);
+                setParam("to", to);
+              }}
+            />
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* REIHE 3: 2 mittlere – beide mit gleicher Card-Hülle */}
+      <section className="col-span-12 grid grid-cols-12 gap-6">
+        <div className="col-span-12 xl:col-span-6">
+          <Card className="h-full rounded-2xl shadow-sm transition-shadow hover:shadow">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Rezensionen nach Uhrzeit</CardTitle>
+            </CardHeader>
+            <CardContent className="h-80">
+              <ReviewsByHourContent data={(stats as any).byHour} />
+            </CardContent>
+          </Card>
+        </div>
+        <div className="col-span-12 xl:col-span-6">
+          <Card className="h-full rounded-2xl shadow-sm transition-shadow hover:shadow">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Rezensionen nach Wochentag</CardTitle>
+            </CardHeader>
+            <CardContent className="h-80">
+              <ReviewsByWeekdayChart
+                data={(stats as any).byWeekday}
+                onSelectWeekday={(idx) => setParam("weekday", String(idx))}
+                rightSlot={
+                  <a
+                    href={toReviewsUrl({})}
+                    className="text-sm underline underline-offset-4 hover:opacity-80"
+                  >
+                    Zu Rezensionen
+                  </a>
+                }
+              />
+            </CardContent>
+          </Card>
         </div>
       </section>
 
-      {/* REIHE 3: 2 mittlere Cards (je 6 Spalten = so breit wie 4 kleine) */}
-      <section className="grid grid-cols-1 gap-8 xl:grid-cols-12">
-        <div className="xl:col-span-6">
-          <ReviewsByHourInline data={(stats as any).byHour} />
+      {/* REIHE 4: 2 mittlere – gleiche Card-Hülle */}
+      <section className="col-span-12 grid grid-cols-12 gap-6">
+        <div className="col-span-12 xl:col-span-6">
+          <Card className="h-full rounded-2xl shadow-sm transition-shadow hover:shadow">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Häufigste Begriffe</CardTitle>
+            </CardHeader>
+            <CardContent className="h-80">
+              <TopKeywordsChart
+                data={(stats as any).topKeywords}
+                onSelect={(term) => router.push(toReviewsUrl({ q: term }))}
+              />
+            </CardContent>
+          </Card>
         </div>
-        <div className="xl:col-span-6">
-          <ReviewsByWeekdayChart
-            data={(stats as any).byWeekday}
-            onSelectWeekday={(idx) => setParam("weekday", String(idx))}
-            rightSlot={
-              <a
-                href={toReviewsUrl({})}
-                className="text-sm underline underline-offset-4 hover:opacity-80"
-              >
-                Zu Rezensionen
-              </a>
-            }
-          />
-        </div>
-      </section>
-
-      {/* REIHE 4: 2 mittlere Cards (Keywords + Sterne) */}
-      <section className="grid grid-cols-1 gap-8 xl:grid-cols-12">
-        <div className="xl:col-span-6">
-          <TopKeywordsChart
-            data={(stats as any).topKeywords /* optional: [{term,count}] */}
-            onSelect={(term) => router.push(toReviewsUrl({ q: term }))}
-          />
-        </div>
-        <div className="xl:col-span-6">
-          <RatingByStarsChart data={(stats as any).byStars} />
+        <div className="col-span-12 xl:col-span-6">
+          <Card className="h-full rounded-2xl shadow-sm transition-shadow hover:shadow">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Anzahl Rating nach Sternen</CardTitle>
+            </CardHeader>
+            <CardContent className="h-80">
+              <RatingByStarsChart data={(stats as any).byStars} />
+            </CardContent>
+          </Card>
         </div>
       </section>
     </div>
   );
 }
 
-/** --------- Inline: „Rezensionen nach Uhrzeit“ (0–23) --------- */
-function ReviewsByHourInline({
+/** --------- Inhalt-only: „Rezensionen nach Uhrzeit“ (0–23) --------- */
+function ReviewsByHourContent({
   data,
 }: {
   data?: Array<{ hour: number | string; count: number }>;
 }) {
   const hasData = Array.isArray(data) && data.length > 0;
 
-  // 0..23 normalisieren (leere Stunden als 0 auffüllen)
+  // 0..23 normalisieren (leere Stunden auffüllen)
   const rows = hasData
     ? Array.from({ length: 24 }).map((_, h) => {
         const hit = data!.find((d) => Number(d.hour) === h);
@@ -225,38 +253,31 @@ function ReviewsByHourInline({
       })
     : [];
 
+  if (!hasData) {
+    return (
+      <div className="h-full grid place-items-center text-sm text-muted-foreground">
+        Noch keine Stundendaten vorhanden.
+      </div>
+    );
+  }
+
   return (
-    <Card className="rounded-2xl shadow-sm hover:shadow transition-shadow">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Rezensionen nach Uhrzeit</CardTitle>
-      </CardHeader>
-      <CardContent className="h-80">{/* vorher: h-72 */}
-        {!hasData ? (
-          <div className="h-full grid place-items-center text-sm text-muted-foreground">
-            Noch keine Stundendaten vorhanden.
-          </div>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={rows}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis
-                dataKey="hour"
-                tickMargin={6}
-                ticks={[0, 3, 6, 9, 12, 15, 18, 21]}
-              />
-              <YAxis allowDecimals={false} />
-              <Tooltip
-                formatter={(val: any) => [Intl.NumberFormat().format(val), "Rezensionen"]}
-                labelFormatter={(h) =>
-                  `Uhrzeit: ${String(h).padStart(2, "0")}:00`
-                }
-              />
-              <Bar dataKey="count" />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </CardContent>
-    </Card>
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={rows}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis
+          dataKey="hour"
+          tickMargin={6}
+          ticks={[0, 3, 6, 9, 12, 15, 18, 21]}
+        />
+        <YAxis allowDecimals={false} />
+        <Tooltip
+          formatter={(val: any) => [Intl.NumberFormat().format(val), "Rezensionen"]}
+          labelFormatter={(h) => `Uhrzeit: ${String(h).padStart(2, "0")}:00`}
+        />
+        <Bar dataKey="count" />
+      </BarChart>
+    </ResponsiveContainer>
   );
 }
 

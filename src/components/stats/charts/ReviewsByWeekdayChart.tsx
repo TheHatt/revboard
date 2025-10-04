@@ -29,12 +29,8 @@ export default function ReviewsByWeekdayChart({ data, onSelectWeekday, rightSlot
       : [];
 
   return (
-    <Card className="rounded-2xl">
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-base">Rezensionen nach Wochentag</CardTitle>
-        {rightSlot ?? null}
-      </CardHeader>
-      <CardContent className="h-64">
+    <div>
+      <CardContent className="h-80">
         {!hasData ? (
           <div className="h-full grid place-items-center text-sm text-muted-foreground">
             Keine Wochentagsdaten vorhanden.
@@ -57,6 +53,6 @@ export default function ReviewsByWeekdayChart({ data, onSelectWeekday, rightSlot
           </ResponsiveContainer>
         )}
       </CardContent>
-    </Card>
+    </div>
   );
 }

@@ -16,13 +16,13 @@
 }
 
 .dark {
-  --background: 0, 0%, 2%;
+  --background: 0 0% 2%;
   --foreground: 210 40% 98%;
-  --card: 0, 1%, 8%;
+  --card: 0 1% 8%;
   --card-foreground: 210 40% 98%;
   --popover: 222.2 84% 4.9%;
   --popover-foreground: 210 40% 98%;
-  --border: 
+  --border: 217.2 32.6% 17.5%;
   --input: 217.2 32.6% 17.5%;
   --accent: 217.2 32.6% 17.5%;
   --accent-foreground: 210 40% 98%;
@@ -40,6 +40,67 @@
   --color-input: hsl(var(--input));
   --color-accent: hsl(var(--accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
+}
+
+/* Zusätzliche Tokens (Light) */
+:root {
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215 16% 46%;
+
+  /* optionale Chart-Palette */
+  --chart-1: 210 90% 45%; /* blau */
+  --chart-2: 160 65% 40%; /* grün */
+  --chart-3: 35 90% 55%;  /* orange */
+  --chart-4: 280 70% 60%; /* lila */
+  --chart-5: 0 70% 55%;   /* rot */
+}
+
+/* Zusätzliche Tokens (Dark) */
+.dark {
+  --muted: 217.2 32.6% 12%;
+  --muted-foreground: 215 20% 70%;
+
+  --chart-1: 210 90% 60%;
+  --chart-2: 160 65% 55%;
+  --chart-3: 35 90% 60%;
+  --chart-4: 280 70% 70%;
+  --chart-5: 0 70% 60%;
+}
+
+/* Recharts – globale Theme-Anbindung */
+.recharts-cartesian-grid line {
+  stroke: hsl(var(--border));
+}
+.recharts-cartesian-axis line,
+.recharts-cartesian-axis-tick-line {
+  stroke: hsl(var(--border));
+}
+.recharts-cartesian-axis-tick-value {
+  fill: hsl(var(--muted-foreground));
+}
+.recharts-legend-item-text {
+  color: hsl(var(--muted-foreground));
+}
+
+/* Tooltip-Hintergrund + Text */
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background: hsl(var(--card)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  color: hsl(var(--card-foreground)) !important;
+}
+
+/* Bars, Lines, Areas – Standardfarben */
+.recharts-bar-rectangle path {
+  fill: hsl(var(--chart-1));
+}
+.recharts-line .recharts-path {
+  stroke: hsl(var(--chart-2));
+}
+.recharts-area-area {
+  fill: hsl(var(--chart-3));
+}
+.recharts-area-curve {
+  stroke: hsl(var(--chart-3));
 }
 
 

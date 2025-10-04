@@ -77,7 +77,7 @@ export default function FilterBarStats({
       </div>
 
       <div className="sm:justify-self-start">
-        <Button onClick={apply} variant="secondary" className="w-full sm:w-auto">Anwenden</Button>
+        <Button onClick={apply} variant="outline" className="w-full sm:w-auto">Anwenden</Button>
       </div>
     </div>
   );

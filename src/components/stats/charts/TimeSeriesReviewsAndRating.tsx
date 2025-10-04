@@ -39,10 +39,7 @@ export default function TimeSeriesReviewsAndRating({
     : [];
 
   return (
-    <Card className="rounded-2xl">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">{title}</CardTitle>
-      </CardHeader>
+    <div>
       <CardContent className="h-80">
         {!hasCounts ? (
           <div className="h-full grid place-items-center text-sm text-muted-foreground">
@@ -87,7 +84,7 @@ export default function TimeSeriesReviewsAndRating({
           </ResponsiveContainer>
         )}
       </CardContent>
-    </Card>
+    </div>
   );
 }
 

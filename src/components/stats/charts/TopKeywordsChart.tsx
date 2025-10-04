@@ -40,10 +40,7 @@ export default function TopKeywordsChart({
     : [];
 
   return (
-    <Card className="rounded-2xl">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">{title}</CardTitle>
-      </CardHeader>
+    <div>
       <CardContent className="h-72">
         {!hasData ? (
           <div className="h-full grid place-items-center text-sm text-muted-foreground">
@@ -68,6 +65,6 @@ export default function TopKeywordsChart({
           </ResponsiveContainer>
         )}
       </CardContent>
-    </Card>
+      </div>
   );
 }

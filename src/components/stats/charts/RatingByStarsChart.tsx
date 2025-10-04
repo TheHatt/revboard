@@ -16,11 +16,8 @@ export default function RatingByStarsChart({ data }: { data?: Bucket[] }) {
   const hasData = Array.isArray(data) && data.length > 0;
 
   return (
-    <Card className="rounded-2xl">
-      <CardHeader>
-        <CardTitle className="text-base">Verteilung nach Sternen</CardTitle>
-      </CardHeader>
-      <CardContent className="h-64">
+    <div>
+      <CardContent className="h-72">
         {!hasData ? (
           <div className="h-full grid place-items-center text-sm text-muted-foreground">
             Keine Verteilungsdaten vorhanden.
@@ -37,6 +34,6 @@ export default function RatingByStarsChart({ data }: { data?: Bucket[] }) {
           </ResponsiveContainer>
         )}
       </CardContent>
-    </Card>
+      </div>
   );
 }
