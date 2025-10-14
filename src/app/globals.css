@@ -69,7 +69,7 @@
 
 /* Recharts – globale Theme-Anbindung */
 .recharts-cartesian-grid line {
-  stroke: hsl(var(--border));
+  stroke: none;
 }
 .recharts-cartesian-axis line,
 .recharts-cartesian-axis-tick-line {

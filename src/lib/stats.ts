@@ -1,4 +1,4 @@
-// lib/stats.ts
+// src/lib/stats.ts
 import { prisma } from "@/lib/prisma";
 import { buildDateRange } from "@/lib/dateRange";
 import { STOPWORDS_DE, normalizeToken } from "@/lib/stopwords";
@@ -72,7 +72,7 @@ export async function getStats(
     answered,
     avgAgg,
     byStarsRaw,
-    // für byDay und byHour
+    // für byDay / byHour / byWeekday
     publishedRows,
     // für Antwortzeit (Median, SLA, Buckets)
     answeredRows,
@@ -158,7 +158,7 @@ export async function getStats(
   const WEEKDAYS = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
   const weekdayCounts = new Map<number, number>();
   for (const r of publishedRows) {
-    const wd = r.publishedAt.getDay();
+    const wd = r.publishedAt.getDay(); // lokaler Wochentag (wie bisher)
     if (typeof q.weekday === "number" && q.weekday >= 0 && q.weekday <= 6) {
       if (wd !== q.weekday) continue;
     }
@@ -194,7 +194,7 @@ export async function getStats(
     a.location.localeCompare(b.location, "de")
   );
 
-  // ---- NEU: byHour (0..23) aus publishedRows ----
+  // ---- byHour (0..23) aus publishedRows ----
   const hourCounts = new Array<number>(24).fill(0);
   for (const r of publishedRows) {
     const h = r.publishedAt.getHours();
@@ -202,7 +202,7 @@ export async function getStats(
   }
   const byHour = hourCounts.map((count, hour) => ({ hour, count }));
 
-  // ---- NEU: Ø-Bewertung pro Tag (für Zeitstrahl-Linie) ----
+  // ---- Ø-Bewertung pro Tag (für Zeitstrahl-Linie) ----
   const dayAvgMap = new Map<string, { sum: number; n: number }>();
   for (const r of rowsWithRating) {
     if (r.publishedAt && typeof r.rating === "number") {
@@ -221,7 +221,6 @@ export async function getStats(
           .map(([date, { sum, n }]) => ({ date, avg: Number((sum / n).toFixed(2)) }));
 
   // --- Top-Keywords (optional) ---
-// Wir versuchen, ein Textfeld zu finden; wenn keins vorhanden oder leer -> undefined lassen
   let topKeywords: Array<{ term: string; count: number }> | undefined = undefined;
   try {
     const texts = await fetchReviewTexts(where);
@@ -229,7 +228,7 @@ export async function getStats(
       topKeywords = topKeywordsFromTexts(texts, 20); // Top 20
     }
   } catch {
-  // bewusst schlucken – Feature ist optional
+    // optionales Feature – Fehler stillschweigend
   }
 
   // ---- Ergebnis ----
@@ -286,28 +285,22 @@ function emptyStats(): StatsDTO {
     topKeywords: undefined,
   };
 }
-// Welche Textfelder probieren wir in der Review-Tabelle?
-const REVIEW_TEXT_CANDIDATES = ["text"] as const;
 
-/**
- * Versucht nacheinander, ein vorhandenes Textfeld per Prisma zu laden.
- * Bricht beim ersten Erfolg ab. Gibt [] zurück, wenn kein Feld existiert.
- */
+// Ein einziges vorhandenes Textfeld lesen (dein Schema hat `text`)
 async function fetchReviewTexts(where: any): Promise<string[]> {
   try {
     const rows = await prisma.review.findMany({
       where,
       select: { text: true },
+      take: 2000,
     });
     return rows
-      .map((r) => String((r as any).text ?? ""))
-      .filter((s) => s && s.trim().length > 0);
+      .map(r => String((r as any).text ?? ""))
+      .filter(s => s && s.trim().length > 0);
   } catch {
-    // Falls das Feld nicht existiert oder Prisma-Typen anders sind:
     return [];
   }
 }
-
 
 /** sehr simpler Tokenizer: split by non-letters, minLen=3, Stopwörter/Numbers raus */
 function tokenizeDE(text: string): string[] {

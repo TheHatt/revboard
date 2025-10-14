@@ -21,13 +21,25 @@ export default function FilterBarStats({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  // ⚠️ Deine Options benutzen "alle" – nicht "all"
   const [range, setRange] = useState<string>(initialRange ?? "30 Tage");
-  const [locationId, setLocationId] = useState<string>(initialLocationId ?? "all");
+  const [locationId, setLocationId] = useState<string>(initialLocationId ?? "alle");
+
+  const onChangeRange = useCallback((next: string) => {
+    setRange(next);
+    // bei Preset-Wechsel Brush-Parameter entfernen
+    const p = new URLSearchParams(searchParams?.toString());
+    p.set("range", next);
+    p.delete("from");
+    p.delete("to");
+    router.replace(`${pathname}?${p.toString()}`);
+  }, [pathname, router, searchParams]);
 
   const apply = useCallback(() => {
     const params = new URLSearchParams(searchParams?.toString());
     params.set("range", range);
     params.set("location", locationId);
+    // (range wurde evtl. oben schon geändert; falls der User nur Standort ändert, behalten wir from/to)
     router.push(`${pathname}?${params.toString()}`);
   }, [range, locationId, pathname, router, searchParams]);
 
@@ -45,15 +57,18 @@ export default function FilterBarStats({
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 items-end">
       <div>
         <label className="mb-1 block text-sm text-muted-foreground">Zeitraum</label>
-        <Select value={range} onValueChange={setRange}>
+        <Select value={range} onValueChange={onChangeRange}>
           <SelectTrigger className="w-full">
             <SelectValue placeholder="Zeitraum wählen" />
           </SelectTrigger>
           <SelectContent className="z-50 bg-popover text-popover-foreground border rounded-md shadow-md">
             {rangeOptions.map((o) => (
-              <SelectItem key={o.value} value={o.value} className="cursor-pointer focus:bg-accent focus:text-accent-foreground">
+              <SelectItem
+                key={o.value}
+                value={o.value}
+                className="cursor-pointer focus:bg-accent focus:text-accent-foreground"
+              >
                 {o.label}
-                
               </SelectItem>
             ))}
           </SelectContent>
@@ -77,7 +92,9 @@ export default function FilterBarStats({
       </div>
 
       <div className="sm:justify-self-start">
-        <Button onClick={apply} variant="outline" className="w-full sm:w-auto">Anwenden</Button>
+        <Button onClick={apply} variant="outline" className="w-full sm:w-auto">
+          Anwenden
+        </Button>
       </div>
     </div>
   );

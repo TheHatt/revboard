@@ -9,7 +9,11 @@ import { redirect } from "next/navigation";
 type SPRecord = Record<string, string | string[] | undefined>;
 type SP = URLSearchParams | SPRecord;
 
-// Robust für URLSearchParams ODER Record
+/**
+ * Robust für URLSearchParams ODER Record.
+ * - Wenn from/to vorhanden sind, haben sie Vorrang und wir ignorieren range (=> "vollständig")
+ * - locationId: "alle"/"all" => undefined
+ */
 function normalize(sp: SP) {
   const isSearchParams = typeof (sp as any)?.get === "function";
 
@@ -24,11 +28,21 @@ function normalize(sp: SP) {
     return (raw as string | undefined) ?? null;
   };
 
-  // Default jetzt "vollständig", damit sofort Daten sichtbar sind
-  const range = (getVal("range") as StatsQuery["range"]) ?? "vollständig";
+  const from = getVal("from");
+  const to = getVal("to");
+  const hasFromTo = !!(from && to);
+
+  const range =
+    hasFromTo
+      ? ("vollständig" as const)
+      : ((getVal("range") as StatsQuery["range"]) ?? "30 Tage");
+
   const loc = getVal("location"); // "alle" | <locationId>
+
   return {
     range,
+    from: hasFromTo ? from : null,
+    to: hasFromTo ? to : null,
     locationId: !loc || loc === "alle" || loc === "all" ? undefined : (loc as string),
   };
 }
@@ -36,7 +50,7 @@ function normalize(sp: SP) {
 export default async function Page({
   searchParams,
 }: {
-  // Next 15: Promise<URLSearchParams>, ältere Setups reichen auch ein Record
+  // Next 15: Promise<URLSearchParams>, ältere Setups auch als Record möglich
   searchParams: Promise<SP>;
 }) {
   // --- Session / Tenancy ---
@@ -71,6 +85,16 @@ export default async function Page({
   const sp = await searchParams;
   const f = normalize(sp);
 
+  // Debug: was kommt aus der URL wirklich an?
+  if (process.env.NODE_ENV !== "production") {
+    // sp kann URLSearchParams ODER Record sein
+    const debugObj =
+      typeof (sp as any)?.entries === "function"
+        ? Object.fromEntries((sp as URLSearchParams).entries())
+        : sp;
+    console.debug("[stats/page] URL params", debugObj);
+  }
+
   // Nur zulässige locationId durchlassen
   const validLocationId =
     f.locationId && locs.some((l) => l.id === f.locationId) ? f.locationId : undefined;
@@ -86,10 +110,17 @@ export default async function Page({
   }
 
   // --- Stats ziehen ---
-  const stats = await getStats(tenantId, allowedLocationIds, {
-    range: f.range,
-    locationId: validLocationId,
-  });
+  // Hinweis: Falls dein aktuelles StatsQuery noch keine from/to kennt,
+  // geben wir sie per Spread + `as any` weiter, damit TS nicht meckert.
+  const stats = await getStats(
+    tenantId,
+    allowedLocationIds,
+    {
+      range: f.range,
+      locationId: validLocationId,
+      ...(f.from && f.to ? { from: f.from, to: f.to } : {}),
+    } as any
+  );
 
   return (
     <main className="flex flex-col gap-6">

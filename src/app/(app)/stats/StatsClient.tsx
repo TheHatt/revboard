@@ -34,6 +34,7 @@ export default function StatsClient({
   stats: StatsDTO;
   filters: StatsFilters;
 }) {
+  console.debug("[StatsClient] filters", filters);
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();

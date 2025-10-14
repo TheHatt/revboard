@@ -41,7 +41,7 @@ export default function TopKeywordsChart({
 
   return (
     <div>
-      <CardContent className="h-72">
+      <CardContent className="h-80">
         {!hasData ? (
           <div className="h-full grid place-items-center text-sm text-muted-foreground">
             Noch keine Begriffsstatistik vorhanden.
